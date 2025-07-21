@@ -1,5 +1,8 @@
 # DocRAG: Document Retrieval-Augmented Generation
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+
 A local RAG pipeline that watches document folders and enables natural language querying using vector search and OpenAI. Perfect for personal document collections, team folders, or any local document repository.
 
 ## 🚀 Quick Start
@@ -165,4 +168,6 @@ curl -X POST "http://localhost:8000/query" \
 
 ## 📜 License
 
-This project follows the coding guidelines in `.github/copilot-instructions.md`.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+Copyright (c) 2025 DocRAG Contributors
