@@ -1,33 +1,22 @@
 # Repository Custom Instructions for GitHub Copilot
 
-The goal of this repo is to build **DocQuest** - a local RAG pipeline that quests through document folders and lets users query documents in natural language. DocQuest embarks on intelligent journeys through any local document collection - personal files, team folders, cloud-synced directories, etc.ry Custo3. **Testing**  
-   * New Python modules should include **pytest** unit tests under `tests/`.  
-   * Use `pytest‑tmpdir` or `tmp_path` fixtures instead of real document data.
-4. **Dependencies**  
-   * Keep requirements minimal—if the task can be done with the stdlib or an existing listed package, avoid new libs.  
-   * For embeddings, default to **`sentence‑transformers/all‑MiniLM‑L6‑v2`** unless a task explicitly calls for OpenAI embeddings.
-5. **Comments & TODOs**  
-   * Leave `# TODO:` markers for incomplete sections; never commit unfinished code without a TODO.ctions for GitHub Copilot
-
-The goal of this repo is to build a small, local **RAG pipeline** that watches document folders and lets me query the documents in natural language. It works with any local document collection - personal files, team folders, cloud-synced directories, etc.epository Custom Instructions for GitHub Copilot
-
-The goal of this repo is to build a small, local **RAG pipeline** that syncs a SharePoint folder via OneDrive (Files‑On‑Demand) and lets me query the documents in natural language.
+The goal of this repo is to build **DocQuest** - a local RAG pipeline that quests through document folders and lets users query documents in natural language. DocQuest embarks on intelligent journeys through any local document collection - personal files, team folders, cloud-synced directories, etc.
 
 ---
 
 ## General coding guidelines
 
 1. **Target runtimes**  
-   * Python ≥ 3.11  
-   * Node (LTS) for the optional Next.js UI
+   * Python ≥ 3.11  
+   * Node (LTS) for the optional Next.js UI
 2. **Style & tooling**  
-   * Use **type hints**, `dataclasses`/`pydantic`, and Google‑style docstrings.  
-   * Format Python with **Black (PEP 8, 88 char line length)**; format JS/TS with **Prettier**.  
-   * Prefer `pathlib.Path` over `os.path` for file paths.  
+   * Use **type hints**, `dataclasses`/`pydantic`, and Google‑style docstrings.  
+   * Format Python with **Black (PEP 8, 88 char line length)**; format JS/TS with **Prettier**.  
+   * Prefer `pathlib.Path` over `os.path` for file paths.  
    * Windows is the primary dev environment—assume backslashes in examples.
 3. **Testing**  
-   * New Python modules should include **pytest** unit tests under `tests/`.  
-   * Use `pytest‑tmpdir` or `tmp_path` fixtures instead of real SharePoint data.
+   * New Python modules should include **pytest** unit tests under `tests/`.  
+   * Use `pytest‑tmpdir` or `tmp_path` fixtures instead of real document data.
 4. **Dependencies**  
    * Keep requirements minimal—if the task can be done with the stdlib or an existing listed package, avoid new libs.  
    * For embeddings, default to **`sentence‑transformers/all‑MiniLM‑L6‑v2`** unless a task explicitly calls for OpenAI embeddings.
@@ -39,26 +28,26 @@ The goal of this repo is to build a small, local **RAG pipeline** that syncs a S
 ## Python‑specific rules
 
 * **Extractor (`ingest/extractor.py`)**  
-  * Use `PyMuPDF` (`fitz`) for PDF parsing.  
-  * Use `python‑docx`, `python‑pptx`, and `pandas.read_excel` for DOCX, PPTX, XLSX respectively.  
+  * Use `PyMuPDF` (`fitz`) for PDF parsing.  
+  * Use `python‑docx`, `python‑pptx`, and `pandas.read_excel` for DOCX, PPTX, XLSX respectively.  
   * Return `List[Tuple[str, str]]` where the first element is a **unit id** (page/slide/sheet) and the second is raw text.
 * **Vector store (`ingest/vector_store.py`)**  
   * Wrap **FAISS** + **SQLite**; ensure `upsert()` de‑dupes by `chunk_id`.  
   * Persist the FAISS index to `data/vector.index` after every write.
 * **Watcher (`watcher/watch.py`)**  
-  * Use `watchdog.observers.Observer` with a 2 s debounce to avoid duplicate events.  
-  * Ignore temp files beginning `~$`.
+  * Use `watchdog.observers.Observer` with a 2 s debounce to avoid duplicate events.  
+  * Ignore temp files beginning `~$`.
 * **CLI (`cli/ask.py`)**  
   * Answers must cite file path + unit id in plain text.  
-  * If no context retrieved, return: *“No relevant information found.”*.
+  * If no context retrieved, return: *"No relevant information found."*.
 
 ---
 
 ## JavaScript / Next.js UI rules
 
-* Scaffold with **`create‑next‑app`** (App Router).  
+* Scaffold with **`create‑next‑app`** (App Router).  
 * Use **shadcn/ui** components and **TailwindCSS** (already configured in the template).  
-* Fetch answers from FastAPI with `SSE` and stream them to the chat panel.
+* Fetch answers from FastAPI with `SSE` and stream them to the chat panel.
 
 ---
 
@@ -75,10 +64,10 @@ data/**
 
 ## Interactions you can ask Copilot to perform
 
-* “Implement the PDF extractor”
-* “Write unit tests for chunker.py”
-* “Generate a React chat component that streams SSE”
-* “Refactor ingest.py to use async batching”
+* "Implement the PDF extractor"
+* "Write unit tests for chunker.py"
+* "Generate a React chat component that streams SSE"
+* "Refactor ingest.py to use async batching"
 
 ---
 

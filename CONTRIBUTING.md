@@ -1,4 +1,4 @@
-# Contributing to DocRAG
+# Contributing to DocQuest
 
 Thanks for your interest in contributing! This guide will help you get started.
 
