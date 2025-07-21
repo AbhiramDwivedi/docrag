@@ -15,12 +15,14 @@ python -m venv .venv
 # 2. Install dependencies
 pip install -r requirements.txt
 
-# 3. Configure SharePoint sync path
-# Edit config/config.yaml and update sync_root to your OneDrive SharePoint folder
-# Example: "~/Company Name - SharePoint Site"
+# 3. Create your config file
+copy config\config.yaml.template config\config.yaml  # Windows
+# cp config/config.yaml.template config/config.yaml  # macOS/Linux
 
-# 4. Setup OpenAI API key
-python setup_openai.py
+# 4. Configure SharePoint sync path and API key
+# Edit config/config.yaml:
+#   - Update sync_root to your OneDrive SharePoint folder
+#   - Add your OpenAI API key
 
 # 5. Index your documents
 python -m ingest.ingest --mode full
@@ -49,6 +51,14 @@ uvicorn api.app:app --reload
 
 ## 🔧 Configuration
 
+### Initial Setup
+After cloning, create your configuration file:
+```bash
+# Copy the template
+copy config\config.yaml.template config\config.yaml  # Windows
+cp config/config.yaml.template config/config.yaml    # macOS/Linux
+```
+
 ### SharePoint Sync Setup
 1. Sync your SharePoint document library via OneDrive
 2. Update `config/config.yaml`:
@@ -57,17 +67,17 @@ uvicorn api.app:app --reload
    ```
 
 ### OpenAI API Key Setup
-**Option 1: Secure setup (recommended)**
-```bash
-python setup_openai.py
-```
-
-**Option 2: Manual setup**
+**Option 1: Direct config file (recommended)**
 1. Get your API key from [OpenAI Platform](https://platform.openai.com/api-keys)
 2. Edit `config/config.yaml`:
    ```yaml
    openai_api_key: "your-actual-api-key-here"
    ```
+
+**Option 2: Setup script**
+```bash
+python setup_openai.py
+```
 
 **Option 3: Environment variable**
 ```bash
@@ -133,10 +143,11 @@ curl -X POST "http://localhost:8000/query" \
 
 ## 🚨 Important Notes
 
-1. **First Run**: Copy `config/config.yaml.template` to `config/config.yaml` if missing
+1. **First Run**: Copy `config/config.yaml.template` to `config/config.yaml` and configure it
 2. **SharePoint Path**: Use the local OneDrive sync folder path, not SharePoint URLs
 3. **File Permissions**: Ensure read access to SharePoint documents
 4. **API Limits**: OpenAI API usage charges apply for question answering
+5. **Security**: Your `config/config.yaml` is git-ignored and stays local
 
 ## 🛟 Troubleshooting
 

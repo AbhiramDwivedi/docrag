@@ -23,9 +23,12 @@ def setup_project():
     template_path = Path("config/config.yaml.template")
     
     if not config_path.exists() and template_path.exists():
-        print("📁 Copying config template...")
+        print("📁 Creating config from template...")
         shutil.copy2(template_path, config_path)
         print(f"✅ Created {config_path}")
+        print("📝 Please edit config/config.yaml to:")
+        print("   - Set your SharePoint path in sync_root")
+        print("   - Add your OpenAI API key")
     elif config_path.exists():
         print(f"✅ Config file already exists: {config_path}")
     else:
@@ -43,10 +46,9 @@ def setup_project():
     
     print("\n📋 Next Steps:")
     print("1. Install dependencies: pip install -r requirements.txt")
-    print("2. Update SharePoint path in config/config.yaml")
-    print("3. Setup OpenAI API key: python setup_openai.py")
-    print("4. Index documents: python -m ingest.ingest --mode full")
-    print("5. Ask questions: python -m cli.ask \"What files are available?\"")
+    print("2. Edit config/config.yaml with your settings")
+    print("3. Index documents: python -m ingest.ingest --mode full")
+    print("4. Ask questions: python -m cli.ask \"What files are available?\"")
     print("\n📖 See README.md for detailed instructions")
     
     return True
