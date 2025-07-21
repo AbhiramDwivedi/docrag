@@ -8,7 +8,7 @@ from typing import Dict, Any, Optional
 CONFIG_PATH = Path(__file__).with_name("config.yaml")
 
 class Settings(BaseModel):
-    sync_root: Path = Field(..., description="Local OneDrive/SharePoint folder")
+    sync_root: Path = Field(..., description="Local document folder to watch and index")
     db_path: Path
     vector_path: Path
     chunk_size: int = 800

@@ -1,4 +1,4 @@
-sync_root: "~/YourCompany - SharePoint Site"
+sync_root: "~/Documents/MyDocuments"
 db_path: "data/docmeta.db"
 vector_path: "data/vector.index"
 chunk_size: 800

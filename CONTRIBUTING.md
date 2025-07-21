@@ -1,4 +1,4 @@
-# Contributing to SP-RAG
+# Contributing to DocRAG
 
 Thanks for your interest in contributing! This guide will help you get started.
 
@@ -20,7 +20,7 @@ Thanks for your interest in contributing! This guide will help you get started.
 
 3. **Configure for development**
    ```bash
-   # Update config/config.yaml with your SharePoint path
+   # Update config/config.yaml with your document folder path
    # Add your OpenAI API key
    python setup_openai.py
    ```
@@ -83,7 +83,7 @@ Please follow the guidelines in `.github/copilot-instructions.md`:
 
 - **Never commit API keys** - they're in .gitignore for a reason
 - **Use the template files** for configuration examples
-- **Test with sample documents** rather than sensitive corporate data
+- **Test with sample documents** rather than sensitive personal data
 
 ## Common Development Tasks
 

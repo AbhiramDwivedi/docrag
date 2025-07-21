@@ -9,7 +9,7 @@ from pathlib import Path
 
 def setup_project():
     """Setup the project after cloning from GitHub."""
-    print("🚀 SP-RAG Post-Clone Setup")
+    print("🚀 DocRAG Post-Clone Setup")
     print("=" * 50)
     
     # Check if we're in the right directory
@@ -27,7 +27,7 @@ def setup_project():
         shutil.copy2(template_path, config_path)
         print(f"✅ Created {config_path}")
         print("📝 Please edit config/config.yaml to:")
-        print("   - Set your SharePoint path in sync_root")
+        print("   - Set your document folder path in sync_root")
         print("   - Add your OpenAI API key")
     elif config_path.exists():
         print(f"✅ Config file already exists: {config_path}")

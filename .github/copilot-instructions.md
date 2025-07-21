@@ -1,4 +1,13 @@
-# Repository Custom Instructions for GitHub Copilot
+# Repository Custo3. **Testing**  
+   * New Python modules should include **pytest** unit tests under `tests/`.  
+   * Use `pytest‑tmpdir` or `tmp_path` fixtures instead of real document data.
+4. **Dependencies**  
+   * Keep requirements minimal—if the task can be done with the stdlib or an existing listed package, avoid new libs.  
+   * For embeddings, default to **`sentence‑transformers/all‑MiniLM‑L6‑v2`** unless a task explicitly calls for OpenAI embeddings.
+5. **Comments & TODOs**  
+   * Leave `# TODO:` markers for incomplete sections; never commit unfinished code without a TODO.ctions for GitHub Copilot
+
+The goal of this repo is to build a small, local **RAG pipeline** that watches document folders and lets me query the documents in natural language. It works with any local document collection - personal files, team folders, cloud-synced directories, etc.epository Custom Instructions for GitHub Copilot
 
 The goal of this repo is to build a small, local **RAG pipeline** that syncs a SharePoint folder via OneDrive (Files‑On‑Demand) and lets me query the documents in natural language.
 

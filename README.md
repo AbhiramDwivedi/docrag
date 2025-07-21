@@ -1,6 +1,6 @@
-# SP-RAG: SharePoint Retrieval-Augmented Generation
+# DocRAG: Document Retrieval-Augmented Generation
 
-A local RAG pipeline that syncs SharePoint documents via OneDrive and enables natural language querying using vector search and OpenAI.
+A local RAG pipeline that watches document folders and enables natural language querying using vector search and OpenAI. Perfect for personal document collections, team folders, or any local document repository.
 
 ## 🚀 Quick Start
 
@@ -19,9 +19,9 @@ pip install -r requirements.txt
 copy config\config.yaml.template config\config.yaml  # Windows
 # cp config/config.yaml.template config/config.yaml  # macOS/Linux
 
-# 4. Configure SharePoint sync path and API key
+# 4. Configure document folder and API key
 # Edit config/config.yaml:
-#   - Update sync_root to your OneDrive SharePoint folder
+#   - Update sync_root to your document folder
 #   - Add your OpenAI API key
 
 # 5. Index your documents
@@ -59,11 +59,12 @@ copy config\config.yaml.template config\config.yaml  # Windows
 cp config/config.yaml.template config/config.yaml    # macOS/Linux
 ```
 
-### SharePoint Sync Setup
-1. Sync your SharePoint document library via OneDrive
+### Document Folder Setup
+1. Choose any folder containing documents you want to search
 2. Update `config/config.yaml`:
    ```yaml
-   sync_root: "~/Your Company - SharePoint Site"
+   sync_root: "~/Documents/MyDocuments"
+   # or any path like "C:/Work/ProjectDocs" or "~/Dropbox/Research"
    ```
 
 ### OpenAI API Key Setup
@@ -144,8 +145,8 @@ curl -X POST "http://localhost:8000/query" \
 ## 🚨 Important Notes
 
 1. **First Run**: Copy `config/config.yaml.template` to `config/config.yaml` and configure it
-2. **SharePoint Path**: Use the local OneDrive sync folder path, not SharePoint URLs
-3. **File Permissions**: Ensure read access to SharePoint documents
+2. **Document Path**: Use any local folder path containing your documents
+3. **File Permissions**: Ensure read access to your document folders
 4. **API Limits**: OpenAI API usage charges apply for question answering
 5. **Security**: Your `config/config.yaml` is git-ignored and stays local
 
@@ -153,7 +154,7 @@ curl -X POST "http://localhost:8000/query" \
 
 ### Common Issues
 - **"No module named 'ingest'"**: Run commands from project root directory
-- **"Permission denied"**: Check file access permissions in OneDrive
+- **"Permission denied"**: Check file access permissions in your document folder
 - **"API key not configured"**: Run `python setup_openai.py`
 - **"No relevant information found"**: Try different query phrasing or re-index documents
 
