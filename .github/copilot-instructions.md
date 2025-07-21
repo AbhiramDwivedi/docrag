@@ -1,4 +1,6 @@
-# Repository Custo3. **Testing**  
+# Repository Custom Instructions for GitHub Copilot
+
+The goal of this repo is to build **DocQuest** - a local RAG pipeline that quests through document folders and lets users query documents in natural language. DocQuest embarks on intelligent journeys through any local document collection - personal files, team folders, cloud-synced directories, etc.ry Custo3. **Testing**  
    * New Python modules should include **pytest** unit tests under `tests/`.  
    * Use `pytest‑tmpdir` or `tmp_path` fixtures instead of real document data.
 4. **Dependencies**  

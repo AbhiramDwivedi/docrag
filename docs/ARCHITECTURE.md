@@ -1,10 +1,10 @@
-# DocRAG Architecture
+# DocQuest Architecture
 
-This document describes the architecture and data flow of the DocRAG (Document Retrieval-Augmented Generation) system.
+This document describes the architecture and data flow of the DocQuest (Document Retrieval-Augmented Generation) system.
 
 ## System Overview
 
-DocRAG is a local RAG pipeline that processes documents from local folders and enables natural language querying using vector search and OpenAI. The system is designed for personal document collections, team folders, or any local document repository.
+DocQuest is a local RAG pipeline that quests through documents from local folders and enables natural language querying using vector search and OpenAI. The system is designed to embark on intelligent journeys through personal document collections, team folders, or any local document repository.
 
 ## Architecture Diagram
 

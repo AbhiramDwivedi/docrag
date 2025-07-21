@@ -1,25 +1,13 @@
-# DocRAG: Document Retrieval-Augmented ## 📁 Project Structure
+# DocQuest: Document Retrieval-Augmented Generation
 
-```
-├── api/                 # FastAPI web interface
-├── cli/                 # Command-line interface
-├── config/              # Configuration files
-├── docs/                # Documentation
-│   ├── ARCHITECTURE.md  # System architecture and data flow
-│   └── EXCEL_PROCESSING.md # Excel processing details
-├── ingest/              # Document processing pipeline
-│   ├── extractor.py     # Multi-format text extraction
-│   ├── chunker.py       # Text chunking with NLTK
-│   ├── embed.py         # Sentence transformer embeddings
-│   ├── vector_store.py  # FAISS + SQLite storage
-│   └── ingest.py        # Main ingestion CLI
-└── watcher/             # File system monitoring
-```
+<div align="center">
+  <img src="assets/icon.png" alt="DocQuest Logo" width="150" height="150">
+</div>
 
-[📊 View detailed system architecture →](docs/ARCHITECTURE.md)[License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 
-A local RAG pipeline that watches document folders and enables natural language querying using vector search and OpenAI. Perfect for personal document collections, team folders, or any local document repository.
+A local RAG pipeline that **quests through your document collections** to find answers using vector search and AI. DocQuest embarks on intelligent journeys through personal files, team folders, or any local document repository, discovering the information you seek with natural language queries.
 
 ## 🚀 Quick Start
 
@@ -53,12 +41,15 @@ python -m cli.ask "What documents are available?"
 uvicorn api.app:app --reload
 ```
 
-## � Project Structure
+## 📁 Project Structure
 
 ```
 ├── api/                 # FastAPI web interface
 ├── cli/                 # Command-line interface
 ├── config/              # Configuration files
+├── docs/                # Documentation
+│   ├── ARCHITECTURE.md  # System architecture and data flow
+│   └── EXCEL_PROCESSING.md # Excel processing details
 ├── ingest/              # Document processing pipeline
 │   ├── extractor.py     # Multi-format text extraction
 │   ├── chunker.py       # Text chunking with NLTK
@@ -67,6 +58,8 @@ uvicorn api.app:app --reload
 │   └── ingest.py        # Main ingestion CLI
 └── watcher/             # File system monitoring
 ```
+
+[📊 View detailed system architecture →](docs/ARCHITECTURE.md)
 
 ## 🔧 Configuration
 
@@ -201,4 +194,4 @@ curl -X POST "http://localhost:8000/query" \
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-Copyright (c) 2025 DocRAG Contributors
+Copyright (c) 2025 DocQuest Contributors

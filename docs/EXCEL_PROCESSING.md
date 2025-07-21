@@ -1,6 +1,6 @@
 # Excel Processing Features
 
-DocRAG includes advanced Excel processing capabilities designed to handle complex workbooks efficiently and intelligently.
+DocQuest includes advanced Excel processing capabilities designed to handle complex workbooks efficiently and intelligently.
 
 ## 🎯 Key Features
 

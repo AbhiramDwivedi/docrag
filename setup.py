@@ -9,7 +9,7 @@ from pathlib import Path
 
 def setup_project():
     """Setup the project after cloning from GitHub."""
-    print("🚀 DocRAG Post-Clone Setup")
+    print("🚀 DocQuest Post-Clone Setup")
     print("=" * 50)
     
     # Check if we're in the right directory

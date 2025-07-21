@@ -1,8 +1,8 @@
 {
-  "name": "docrag-ui",
+  "name": "docquest-ui",
   "version": "0.1.0",
   "private": true,
-  "description": "Document RAG system - UI components for local document search and querying",
+  "description": "DocQuest system - UI components for local document search and intelligent querying",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
