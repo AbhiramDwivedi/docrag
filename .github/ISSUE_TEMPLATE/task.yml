@@ -1,0 +1,11 @@
+name: Task
+description: Atomic development task
+title: "[Task]: "
+labels: ["todo"]
+body:
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+      description: Describe work
+      placeholder: e.g. "Implement _extract_pdf() in extractor.py"

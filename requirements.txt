@@ -1,0 +1,13 @@
+watchdog
+unstructured
+sentence-transformers
+faiss-cpu
+fastapi
+uvicorn[standard]
+pydantic
+PyMuPDF
+python-docx
+python-pptx
+pandas
+rich
+pyyaml

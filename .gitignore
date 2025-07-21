@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Environment files
+.env
+.env.*
+
+# Data and artifacts
+data/
+*.db
+*.index
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Node.js
+node_modules/
+
+# Protect config files that might contain API keys
+config/config.yaml
+config.yaml
+*.config.yaml
+
+# Temporary files and database artifacts
+check_db.py
+check_schema.py
+test_*.py
