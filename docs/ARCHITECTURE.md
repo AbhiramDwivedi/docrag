@@ -30,7 +30,16 @@ graph TB
     %% Processing Pipeline
     subgraph "Document Processing Pipeline"
         Watcher[File Watcher<br/>watcher/watch.py<br/>🔍 Monitors changes]
-        Extractor[Text Extractor<br/>ingest/extractor.py<br/>📝 Multi-format parsing]
+        
+        subgraph "Modular Extractors"
+            ExtractorFactory[Extractor Factory<br/>ingest/extractor.py<br/>🏭 Routes to specialized extractors]
+            PDFExtractor[PDF Extractor<br/>extractors/pdf_extractor.py<br/>📄 LangChain + AI image analysis]
+            DOCXExtractor[DOCX Extractor<br/>extractors/docx_extractor.py<br/>📝 Word document processing]
+            PPTXExtractor[PPTX Extractor<br/>extractors/pptx_extractor.py<br/>📊 PowerPoint processing]
+            XLSXExtractor[XLSX Extractor<br/>extractors/xlsx_simple_extractor.py<br/>📈 Excel processing]
+            TXTExtractor[TXT Extractor<br/>extractors/txt_extractor.py<br/>📄 Plain text processing]
+        end
+        
         Chunker[Text Chunker<br/>ingest/chunker.py<br/>✂️ NLTK-based chunking]
         Embedder[Embedding Generator<br/>ingest/embed.py<br/>🧠 sentence-transformers]
         Ingest[Ingestion Controller<br/>ingest/ingest.py<br/>🔄 Orchestrates pipeline]
@@ -51,15 +60,26 @@ graph TB
 
     %% Data Flow
     LocalDocs --> Watcher
-    PDFs --> Extractor
-    Word --> Extractor
-    Excel --> Extractor
-    PPT --> Extractor
-    TXT --> Extractor
+    PDFs --> ExtractorFactory
+    Word --> ExtractorFactory
+    Excel --> ExtractorFactory
+    PPT --> ExtractorFactory
+    TXT --> ExtractorFactory
+    
+    ExtractorFactory --> PDFExtractor
+    ExtractorFactory --> DOCXExtractor
+    ExtractorFactory --> PPTXExtractor
+    ExtractorFactory --> XLSXExtractor
+    ExtractorFactory --> TXTExtractor
+    
+    PDFExtractor --> Chunker
+    DOCXExtractor --> Chunker
+    PPTXExtractor --> Chunker
+    XLSXExtractor --> Chunker
+    TXTExtractor --> Chunker
     
     Watcher --> Ingest
-    Ingest --> Extractor
-    Extractor --> Chunker
+    Ingest --> ExtractorFactory
     Chunker --> Embedder
     Embedder --> VectorDB
     Embedder --> MetaDB
@@ -79,12 +99,14 @@ graph TB
     %% Styling
     classDef userInterface fill:#e1f5fe
     classDef processing fill:#f3e5f5
+    classDef extractors fill:#e8f5e8
     classDef storage fill:#e8f5e8
     classDef external fill:#fff3e0
     classDef documents fill:#fce4ec
 
     class CLI,API,WebUI userInterface
-    class Watcher,Extractor,Chunker,Embedder,Ingest processing
+    class Watcher,Chunker,Embedder,Ingest processing
+    class ExtractorFactory,PDFExtractor,DOCXExtractor,PPTXExtractor,XLSXExtractor,TXTExtractor extractors
     class VectorDB,MetaDB,ConfigFile storage
     class OpenAI,HuggingFace external
     class LocalDocs,PDFs,Word,Excel,PPT,TXT documents
@@ -98,7 +120,10 @@ graph TB
 sequenceDiagram
     participant User
     participant Ingest as ingest.py
-    participant Extractor as extractor.py
+    participant Factory as extractor.py (Factory)
+    participant PDFExt as pdf_extractor.py
+    participant DOCXExt as docx_extractor.py
+    participant XLSXExt as xlsx_simple_extractor.py
     participant Chunker as chunker.py
     participant Embedder as embed.py
     participant VectorStore as vector_store.py
@@ -106,19 +131,27 @@ sequenceDiagram
     participant SQLite
 
     User->>Ingest: python -m ingest.ingest
-    Ingest->>Extractor: extract_text(file_path)
+    Ingest->>Factory: extract_text(file_path)
     
     alt PDF File
-        Extractor->>Extractor: PyMuPDF processing
+        Factory->>PDFExt: extract(pdf_path)
+        PDFExt->>PDFExt: LangChain + PyMuPDF processing
+        PDFExt->>PDFExt: AI image analysis (GPT-4 Vision)
+        PDFExt->>PDFExt: 7-layer image filtering
+        PDFExt-->>Factory: List[Tuple[unit_id, text]]
     else Excel File
-        Extractor->>Extractor: Smart sheet prioritization
-        Extractor->>Extractor: Empty sheet filtering
-        Extractor->>Extractor: Complete data extraction
+        Factory->>XLSXExt: extract(xlsx_path)
+        XLSXExt->>XLSXExt: Smart sheet prioritization
+        XLSXExt->>XLSXExt: Empty sheet filtering
+        XLSXExt->>XLSXExt: Complete data extraction
+        XLSXExt-->>Factory: List[Tuple[unit_id, text]]
     else Word/PowerPoint
-        Extractor->>Extractor: python-docx/pptx processing
+        Factory->>DOCXExt: extract(docx_path)
+        DOCXExt->>DOCXExt: python-docx/pptx processing
+        DOCXExt-->>Factory: List[Tuple[unit_id, text]]
     end
     
-    Extractor-->>Ingest: List[Tuple[unit_id, text]]
+    Factory-->>Ingest: List[Tuple[unit_id, text]]
     Ingest->>Chunker: chunk_text(text, settings)
     Chunker-->>Ingest: List[chunks]
     Ingest->>Embedder: embed_texts(chunks)
@@ -126,6 +159,29 @@ sequenceDiagram
     Ingest->>VectorStore: upsert(chunk_ids, vectors, metadata)
     VectorStore->>FAISS: Add vectors
     VectorStore->>SQLite: Store metadata
+```
+
+### Modular Extractor Architecture
+
+The document extraction system uses a factory pattern with specialized extractors:
+
+#### Factory Pattern (`ingest/extractor.py`)
+- Routes documents to appropriate extractors based on file extension
+- Maintains backward compatibility with existing `extract_text()` interface
+- Provides centralized error handling and logging
+
+#### Specialized Extractors (`ingest/extractors/`)
+- **PDF Extractor**: Advanced processing with LangChain and GPT-4 Vision image analysis
+- **DOCX Extractor**: Word document paragraph extraction using python-docx
+- **PPTX Extractor**: PowerPoint slide-by-slide text extraction
+- **XLSX Extractor**: Excel spreadsheet processing with smart sheet prioritization
+- **TXT Extractor**: Simple UTF-8 text file processing
+
+#### Benefits
+- **Isolation**: Issues with one file type don't affect others
+- **Testability**: Each extractor can be unit tested independently
+- **Maintainability**: Clear separation of concerns for each document type
+- **Extensibility**: New file types can be added by creating new extractor classes
 ```
 
 ### Query Processing Flow
@@ -160,8 +216,15 @@ sequenceDiagram
 
 ### 2. Modular Processing Pipeline
 - **Rationale**: Maintainability, testability, and extensibility
-- **Implementation**: Separate modules for extraction, chunking, embedding, storage
-- **Benefits**: Easy to add new file formats or change processing logic
+- **Implementation**: 
+  - **Factory Pattern**: `ingest/extractor.py` routes documents to specialized extractors
+  - **Specialized Extractors**: Individual classes for PDF (with AI image analysis), DOCX, PPTX, XLSX, and TXT
+  - **Separate Modules**: Independent modules for extraction, chunking, embedding, and storage
+- **Benefits**: 
+  - Easy to add new file formats by creating new extractor classes
+  - Individual extractors can be tested in isolation
+  - File type issues don't affect other extractors
+  - Clear separation of concerns for each document type
 
 ### 3. FAISS + SQLite Hybrid Storage
 - **Rationale**: Performance for vector search + flexibility for metadata

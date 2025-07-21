@@ -11,3 +11,14 @@ python-pptx
 pandas
 rich
 pyyaml
+# LangChain for advanced PDF processing
+langchain
+langchain-community
+langchain-openai
+langchain-unstructured
+# Image processing and OCR
+pytesseract
+pillow
+pdf2image
+# OpenAI for image analysis
+openai

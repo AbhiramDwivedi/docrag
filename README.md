@@ -49,9 +49,17 @@ uvicorn api.app:app --reload
 ├── config/              # Configuration files
 ├── docs/                # Documentation
 │   ├── ARCHITECTURE.md  # System architecture and data flow
-│   └── EXCEL_PROCESSING.md # Excel processing details
+│   ├── EXCEL_PROCESSING.md # Excel processing details
+│   └── PDF_PROCESSING.md # LangChain + AI PDF processing
 ├── ingest/              # Document processing pipeline
-│   ├── extractor.py     # Multi-format text extraction
+│   ├── extractors/      # Modular document extractors
+│   │   ├── base.py      # Abstract extractor interface
+│   │   ├── pdf_extractor.py    # Advanced PDF + AI image analysis
+│   │   ├── docx_extractor.py   # Word document processing
+│   │   ├── pptx_extractor.py   # PowerPoint processing
+│   │   ├── xlsx_simple_extractor.py # Excel processing
+│   │   └── txt_extractor.py    # Plain text processing
+│   ├── extractor.py     # Main extraction interface (factory)
 │   ├── chunker.py       # Text chunking with NLTK
 │   ├── embed.py         # Sentence transformer embeddings
 │   ├── vector_store.py  # FAISS + SQLite storage
@@ -99,7 +107,12 @@ export OPENAI_API_KEY="your-api-key"
 
 ## 📄 Supported File Types
 
-- **PDF**: Text extraction via PyMuPDF
+- **PDF**: **🚀 Enhanced with LangChain + AI image analysis**
+  - Advanced text extraction via LangChain (fallback to PyMuPDF)
+  - GPT-4 Vision analysis of images and diagrams
+  - Architecture diagrams → structured markdown conversion
+  - Smart image type detection and filtering
+  - [📄 See detailed PDF processing features →](docs/PDF_PROCESSING.md)
 - **Word Documents**: .docx via python-docx
 - **PowerPoint**: .pptx via python-pptx  
 - **Excel**: .xlsx via pandas + openpyxl with **enhanced processing**
@@ -157,6 +170,9 @@ curl -X POST "http://localhost:8000/query" \
 - **Search**: Retrieves top-8 relevant chunks for context
 
 ### Document Processing
+- **Modular Architecture**: Separate extractor classes for each file type (PDF, DOCX, PPTX, XLSX, TXT)
+- **Advanced PDF Processing**: LangChain integration with GPT-4 Vision for image analysis
+- **Smart Image Filtering**: 7-layer filtering system to identify meaningful diagrams vs decorative images
 - **Processing Limits**: Configurable file size and content limits per format
 - **Error Handling**: Graceful handling of permission errors and malformed files
 - **Progress Tracking**: Rich progress bars with file counts and timing
