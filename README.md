@@ -93,7 +93,12 @@ export OPENAI_API_KEY="your-api-key"
 - **PDF**: Text extraction via PyMuPDF
 - **Word Documents**: .docx via python-docx
 - **PowerPoint**: .pptx via python-pptx  
-- **Excel**: .xlsx via pandas + openpyxl
+- **Excel**: .xlsx via pandas + openpyxl with **enhanced processing**
+  - Smart sheet prioritization by meaningful names
+  - Complete data extraction with relationship preservation
+  - Empty sheet filtering and intelligent fallback strategies
+  - Detailed processing logs and progress tracking
+  - [📊 See detailed Excel processing features →](docs/EXCEL_PROCESSING.md)
 - **Text Files**: .txt plain text
 
 ## 💡 Usage Examples
@@ -103,13 +108,23 @@ export OPENAI_API_KEY="your-api-key"
 # Full re-index
 python -m ingest.ingest --mode full
 
-# Incremental update
+# Incremental update (default)
 python -m ingest.ingest --mode incremental
 
 # Process specific file types
 python -m ingest.ingest --file-type pdf
 python -m ingest.ingest --file-type xlsx
+python -m ingest.ingest --file-type docx
+
+# Process specific files with enhanced options
+python -m ingest.ingest --file-type xlsx --target "quarterly_report.xlsx" --all-sheets
 ```
+
+### Command Line Options
+- `--mode {full,incremental}`: Processing mode (default: incremental)
+- `--file-type FILE_TYPE`: Process only specific file types (pdf, xlsx, docx, pptx, txt)
+- `--target TARGET`: Process specific file by name (useful with --all-sheets)
+- `--all-sheets`: Process ALL sheets in Excel files (removes 15-sheet limit)
 
 ### Querying Documents
 ```bash
@@ -133,7 +148,7 @@ curl -X POST "http://localhost:8000/query" \
 - **Search**: Retrieves top-8 relevant chunks for context
 
 ### Document Processing
-- **Excel Limits**: 50MB max file size, 5 sheets max, 500 rows/sheet
+- **Processing Limits**: Configurable file size and content limits per format
 - **Error Handling**: Graceful handling of permission errors and malformed files
 - **Progress Tracking**: Rich progress bars with file counts and timing
 - **Deduplication**: SHA1-based chunk IDs prevent duplicate processing
@@ -162,7 +177,7 @@ curl -X POST "http://localhost:8000/query" \
 - **"No relevant information found"**: Try different query phrasing or re-index documents
 
 ### File Processing Issues
-- **Excel files stuck**: Large files are automatically limited (50MB, 5 sheets)
+- **Large files**: Processing limits vary by file type (see format-specific docs)
 - **NLTK errors**: Punkt data downloaded automatically on first run
 - **Import errors**: Ensure virtual environment is activated
 

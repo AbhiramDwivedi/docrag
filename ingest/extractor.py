@@ -1,8 +1,23 @@
 """File parsers for PDF, DOCX, PPTX, XLSX."""
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Tuple, Union
+import os
+import re
+
+try:
+    import pandas as pd
+except ImportError:
+    pd = None
 
 Unit = Tuple[str, str]  # logical unit id, text
+
+# Global flag for processing all sheets (set by command line)
+_process_all_sheets = False
+
+def set_all_sheets_mode(enabled: bool):
+    """Set global flag for processing all sheets in Excel files."""
+    global _process_all_sheets
+    _process_all_sheets = enabled
 
 def extract_text(path: Path) -> List[Unit]:
     ext = path.suffix.lower()
@@ -71,54 +86,194 @@ def _extract_pptx(path: Path) -> List[Unit]:
         return []
 
 def _extract_xlsx(path: Path) -> List[Unit]:
-    """Extract text from XLSX using pandas with size limits and error handling."""
+    """Extract text from XLSX by processing all sheets individually with smart prioritization."""
     try:
         import pandas as pd
+        import re
         
-        # Check file size first - skip very large files
+        # Check file size first
         file_size_mb = path.stat().st_size / (1024 * 1024)
-        if file_size_mb > 50:  # Skip files larger than 50MB
-            print(f"Skipping large Excel file {path.name} ({file_size_mb:.1f}MB)")
+        if file_size_mb > 100:  # Increased limit for complete processing
+            print(f"Skipping very large Excel file {path.name} ({file_size_mb:.1f}MB)")
             return []
         
-        # Read Excel file with limited sheets and rows
-        excel_file = pd.ExcelFile(path)
-        sheet_names = excel_file.sheet_names[:5]  # Limit to first 5 sheets
+        print(f"📊 Processing Excel file: {path.name} ({file_size_mb:.1f}MB)")
+        
+        # Get all sheet names without loading data
+        with pd.ExcelFile(path, engine='openpyxl') as excel_file:
+            all_sheets = excel_file.sheet_names
+            
+        print(f"   Found {len(all_sheets)} sheets: {', '.join(all_sheets[:5])}" + 
+              (f" and {len(all_sheets)-5} more..." if len(all_sheets) > 5 else ""))
+        
+        # Prioritize sheets if more than 15 (unless all-sheets mode is enabled)
+        sheets_to_process = all_sheets if _process_all_sheets else _prioritize_sheets(all_sheets)
+        skipped_sheets = []
+        
+        if len(all_sheets) > 15 and not _process_all_sheets:
+            skipped_sheets = [s for s in all_sheets if s not in sheets_to_process]
+            print(f"   ⚠️  Limiting to 15 most relevant sheets. {len(skipped_sheets)} sheets will be skipped.")
+            print(f"   📋 Processing: {', '.join(sheets_to_process)}")
+        elif _process_all_sheets and len(all_sheets) > 15:
+            print(f"   🔄 ALL-SHEETS MODE: Processing all {len(all_sheets)} sheets")
         
         units = []
-        for sheet_name in sheet_names:
+        processed_count = 0
+        empty_count = 0
+        error_count = 0
+        
+        # Process each prioritized sheet
+        for i, sheet_name in enumerate(sheets_to_process, 1):
             try:
-                # Read with strict limits to prevent memory issues and hangs
+                print(f"   📄 Sheet {i}/{len(sheets_to_process)}: '{sheet_name}'", end=" -> ")
+                
+                # Load sheet with generous limits for complete data
                 df = pd.read_excel(
                     path, 
                     sheet_name=sheet_name, 
-                    nrows=500,  # Max 500 rows per sheet
-                    engine='openpyxl'  # Explicitly use openpyxl
+                    nrows=2000,  # Generous limit for complete data
+                    engine='openpyxl'
                 )
                 
-                # Convert dataframe to text representation with limits
-                if not df.empty and len(df.columns) <= 50:  # Skip sheets with too many columns
-                    text_content = df.to_string(
-                        index=False, 
-                        max_rows=200,  # Limit display rows
-                        max_cols=20    # Limit display columns
-                    )
+                # Check if sheet is empty or meaningless
+                if _is_empty_sheet(df):
+                    print("empty, skipped")
+                    empty_count += 1
+                    continue
+                
+                # Convert to meaningful text representation
+                sheet_text = _convert_sheet_to_text(df, sheet_name)
+                
+                if sheet_text.strip():
+                    units.append((f"sheet_{sheet_name}", sheet_text))
+                    print(f"extracted {len(sheet_text)} chars")
+                    processed_count += 1
+                else:
+                    print("no content, skipped")
+                    empty_count += 1
                     
-                    # Truncate very long text
-                    if text_content.strip():
-                        truncated_text = text_content[:5000]  # Max 5KB per sheet
-                        units.append((f"sheet_{sheet_name}", truncated_text))
-                        
             except Exception as sheet_error:
-                print(f"Error processing sheet '{sheet_name}' in {path.name}: {sheet_error}")
+                print(f"error: {sheet_error}")
+                error_count += 1
                 continue
         
-        excel_file.close()  # Explicitly close the file
+        # Summary report
+        print(f"   ✅ Excel processing complete: {processed_count} sheets processed, " +
+              f"{empty_count} empty, {error_count} errors")
+        
+        if skipped_sheets:
+            print(f"   💡 To process all sheets in '{path.name}', run:")
+            print(f"      python -m ingest.ingest --file-type xlsx --target \"{path.name}\" --all-sheets")
+        
         return units
         
     except Exception as e:
         print(f"Error extracting XLSX {path}: {e}")
         return []
+
+def _prioritize_sheets(sheet_names: List[str]) -> List[str]:
+    """Prioritize sheets based on meaningful names, returning top 15."""
+    if len(sheet_names) <= 15:
+        return sheet_names
+    
+    # Priority scoring based on sheet names
+    priority_patterns = {
+        'summary|overview|dashboard|main|primary|index': 10,
+        'data|content|detail|information|info': 8,
+        'report|analysis|results|findings': 7,
+        'budget|financial|cost|revenue|sales': 6,
+        'schedule|timeline|plan|roadmap': 5,
+        'config|setting|parameter|metadata': 4,
+        'template|example|sample': 2,
+        'sheet\d+|temp|tmp|test|backup': 1
+    }
+    
+    scored_sheets = []
+    for sheet in sheet_names:
+        score = 3  # Default score
+        sheet_lower = sheet.lower()
+        
+        for pattern, points in priority_patterns.items():
+            if re.search(pattern, sheet_lower):
+                score = max(score, points)
+                break
+        
+        scored_sheets.append((score, sheet))
+    
+    # Sort by score (highest first), then by original order
+    scored_sheets.sort(key=lambda x: (-x[0], sheet_names.index(x[1])))
+    
+    return [sheet for score, sheet in scored_sheets[:15]]
+
+def _is_empty_sheet(df) -> bool:
+    """Check if a sheet is empty or contains only meaningless data."""
+    if df.empty:
+        return True
+    
+    # Count non-null, non-empty cells
+    non_empty_cells = 0
+    total_cells = df.shape[0] * df.shape[1]
+    
+    for col in df.columns:
+        non_empty_cells += df[col].notna().sum()
+        # Also check for non-whitespace string content
+        if df[col].dtype == 'object':
+            non_empty_cells += df[col].astype(str).str.strip().ne('').sum()
+    
+    # Consider empty if less than 1% of cells have content or very few cells total
+    if total_cells > 0:
+        content_ratio = non_empty_cells / total_cells
+        return content_ratio < 0.01 or non_empty_cells < 5
+    
+    return True
+
+def _convert_sheet_to_text(df, sheet_name: str) -> str:
+    """Convert DataFrame to meaningful text representation preserving relationships."""
+    if df.empty:
+        return ""
+    
+    # Clean column names
+    df.columns = [str(col).strip() for col in df.columns]
+    
+    # Start with sheet identification
+    text_parts = [f"=== SHEET: {sheet_name} ==="]
+    
+    # Add column headers
+    headers = " | ".join(df.columns)
+    text_parts.append(f"COLUMNS: {headers}")
+    text_parts.append("-" * min(80, len(headers)))
+    
+    # Process rows with relationship preservation
+    for idx, row in df.iterrows():
+        row_parts = []
+        for col_name, value in row.items():
+            if pd.notna(value) and str(value).strip():
+                # Preserve column-value relationships
+                clean_value = str(value).strip()
+                if clean_value:
+                    row_parts.append(f"{col_name}: {clean_value}")
+        
+        if row_parts:
+            text_parts.append(" | ".join(row_parts))
+    
+    # Add summary statistics for numerical data
+    numeric_cols = df.select_dtypes(include=['number']).columns
+    if len(numeric_cols) > 0:
+        text_parts.append("\n=== SUMMARY STATISTICS ===")
+        for col in numeric_cols:
+            if df[col].notna().sum() > 0:
+                stats = {
+                    'count': df[col].count(),
+                    'mean': df[col].mean(),
+                    'sum': df[col].sum(),
+                    'min': df[col].min(),
+                    'max': df[col].max()
+                }
+                stats_text = ", ".join([f"{k}: {v:.2f}" if isinstance(v, float) else f"{k}: {v}" 
+                                      for k, v in stats.items()])
+                text_parts.append(f"{col} -> {stats_text}")
+    
+    return "\n".join(text_parts)
 
 def _extract_txt(path: Path) -> List[Unit]:
     """Extract text from plain text files."""
