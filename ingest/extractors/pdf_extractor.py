@@ -146,11 +146,7 @@ class PDFExtractor(BaseExtractor):
                 page = pdf_doc.load_page(page_num)
                 image_list = page.get_images()
                 
-                if not image_list:
-                    continue
-                    
-                print(f"   🖼️  Found {len(image_list)} images on page {page_num + 1}")
-                
+                # Process raster images first
                 for img_index, img in enumerate(image_list):
                     try:
                         # Extract image data
@@ -197,6 +193,56 @@ class PDFExtractor(BaseExtractor):
                     except Exception as img_error:
                         print(f"   ⚠️  Failed to process image {img_index + 1} on page {page_num + 1}: {img_error}")
                         continue
+                
+                # For pages with no raster images, try rendering the whole page as an image 
+                # (captures vector graphics like draw.io diagrams)
+                if not image_list:
+                    print(f"   🎨 Rendering page {page_num + 1} for vector content analysis...")
+                    try:
+                        # Check page API call limit
+                        page_api_calls = sum(1 for unit_id, _ in image_units if f"page_{page_num + 1}_" in unit_id)
+                        if page_api_calls >= 1:  # Limit rendered pages to 1 per page
+                            continue
+                        
+                        # Render page at higher resolution for better diagram quality
+                        mat = fitz.Matrix(2.0, 2.0)  # 2x zoom for better quality
+                        pix = page.get_pixmap(matrix=mat)
+                        img_data = pix.tobytes("png")
+                        image = Image.open(io.BytesIO(img_data))
+                        
+                        # Use relaxed filtering for rendered pages (likely contain diagrams)
+                        if pix.width < 200 or pix.height < 200:
+                            pix = None
+                            continue
+                            
+                        if len(img_data) < 5000:  # Very small file likely empty
+                            pix = None
+                            continue
+                        
+                        # Rate limiting
+                        current_time = time.time()
+                        if current_time - last_api_call_time < 0.5:
+                            time.sleep(0.5)
+                        
+                        # Analyze rendered page with AI
+                        analysis_result = self._analyze_image_with_ai(client, image, api_calls_made)
+                        if analysis_result:
+                            api_calls_made += 1
+                            last_api_call_time = time.time()
+                            
+                            img_type, content = analysis_result
+                            if img_type != 'decorative' and 'skip' not in content.lower():
+                                unit_id = f"page_{page_num + 1}_rendered_{img_type}"
+                                image_units.append((unit_id, f"[PAGE RENDER ANALYSIS]\n{content}"))
+                                print(f"   ✅ Analyzed rendered page {page_num + 1} (type: {img_type})")
+                            else:
+                                print(f"   ⚪ AI identified decorative content, skipping")
+                        
+                        pix = None  # Cleanup
+                        
+                    except Exception as render_error:
+                        print(f"   ⚠️  Failed to render page {page_num + 1}: {render_error}")
+                        continue
             
             pdf_doc.close()
             
@@ -212,8 +258,8 @@ class PDFExtractor(BaseExtractor):
     def _should_process_image(self, image, img_data: bytes, seen_hashes: set, filter_stats: dict) -> bool:
         """Apply multiple filters to determine if image should be processed."""
         
-        # Filter 1: Size check
-        if image.width < 150 or image.height < 150:
+        # Filter 1: Size check (reduced for diagrams)
+        if image.width < 100 or image.height < 100:
             filter_stats['small'] += 1
             return False
         
@@ -230,16 +276,15 @@ class PDFExtractor(BaseExtractor):
             return False
         seen_hashes.add(img_hash)
         
-        # Filter 4: Color complexity
+        # Filter 4: Color complexity (reduced for diagrams)
         colors = image.getcolors(maxcolors=256)
-        if colors and len(colors) < 4:
+        if colors and len(colors) < 2:  # Changed from 4 to 2
             filter_stats['simple'] += 1
             return False
         
-        # Filter 5: File size check
-        if len(img_data) < 2048:
+        # Filter 5: File size check (reduced for diagrams)
+        if len(img_data) < 1024:  # Changed from 2048 to 1024
             filter_stats['tiny_data'] += 1
-            print(f"   ⚪ Skipping tiny image data ({len(img_data)} bytes)")
             return False
         
         return True
@@ -346,10 +391,10 @@ CONTENT: [brief description OR "Skip"]"""
     def _report_filtering_stats(self, filter_stats: dict, api_calls: int, successful_images: int):
         """Report image filtering statistics."""
         print(f"   📊 Image filtering summary:")
-        print(f"      • {filter_stats['small']} too small (< 150x150)")
+        print(f"      • {filter_stats['small']} too small (< 100x100)")
         print(f"      • {filter_stats['aspect_ratio']} wrong aspect ratio (> 5:1)")
         print(f"      • {filter_stats['duplicates']} duplicates")
-        print(f"      • {filter_stats['simple']} too simple (< 4 colors)")
+        print(f"      • {filter_stats['simple']} too simple (< 2 colors)")
         print(f"      • {api_calls} sent to AI for analysis (max 3 per page)")
         
         if successful_images > 0:

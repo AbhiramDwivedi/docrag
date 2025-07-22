@@ -112,6 +112,7 @@ export OPENAI_API_KEY="your-api-key"
   - GPT-4 Vision analysis of images and diagrams
   - Architecture diagrams → structured markdown conversion
   - Smart image type detection and filtering
+  - **Vector graphics support**: Renders pages to capture draw.io diagrams and flowcharts
   - [📄 See detailed PDF processing features →](docs/PDF_PROCESSING.md)
 - **Word Documents**: .docx via python-docx
 - **PowerPoint**: .pptx via python-pptx  
@@ -128,6 +129,26 @@ export OPENAI_API_KEY="your-api-key"
   - Rich attachment information and message type detection
   - [📧 See detailed email processing features →](docs/EMAIL_PROCESSING.md)
 - **Text Files**: .txt plain text
+
+### 🔄 Unsupported Formats → PDF Conversion
+
+For unsupported file formats, **export to PDF** for optimal processing:
+
+**Draw.io Diagrams**: 
+- `.drawio` files → Export as PDF
+- **Vector graphics fully supported**: Our enhanced PDF processor renders pages to capture diagrams, flowcharts, and technical schematics
+
+**Other Formats**:
+- Visio diagrams → Export as PDF
+- CAD drawings → Export as PDF  
+- Image files with text → Convert to PDF
+- Legacy formats → Export/convert to PDF
+
+**Why PDF?** Our PDF extractor features:
+- Advanced text extraction with multiple fallback methods
+- AI-powered image analysis for diagrams and charts
+- Vector graphics rendering for draw.io and technical diagrams
+- Intelligent filtering to focus on meaningful content
 
 ## 💡 Usage Examples
 
