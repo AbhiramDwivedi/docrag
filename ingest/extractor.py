@@ -11,6 +11,7 @@ Supported formats:
 - 📊 PPTX: PowerPoint presentation processing  
 - 📈 XLSX: Excel spreadsheet processing
 - 📄 TXT: Plain text file processing
+- 📧 EMAIL: Email message processing (.msg and .eml files)
 
 Migration Note:
 The old monolithic extractor functions have been moved to separate

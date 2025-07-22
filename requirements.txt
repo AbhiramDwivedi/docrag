@@ -8,6 +8,8 @@ pydantic
 PyMuPDF
 python-docx
 python-pptx
+extract-msg
+beautifulsoup4
 pandas
 rich
 pyyaml

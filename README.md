@@ -121,6 +121,12 @@ export OPENAI_API_KEY="your-api-key"
   - Empty sheet filtering and intelligent fallback strategies
   - Detailed processing logs and progress tracking
   - [📊 See detailed Excel processing features →](docs/EXCEL_PROCESSING.md)
+- **Email Messages**: **🆕 .msg (Outlook) and .eml files**
+  - Thread-level extraction maintaining conversation context
+  - Complete metadata extraction (sender, recipients, dates)
+  - Aggressive signature and quote removal for clean content
+  - Rich attachment information and message type detection
+  - [📧 See detailed email processing features →](docs/EMAIL_PROCESSING.md)
 - **Text Files**: .txt plain text
 
 ## 💡 Usage Examples
@@ -144,7 +150,7 @@ python -m ingest.ingest --file-type xlsx --target "quarterly_report.xlsx" --all-
 
 ### Command Line Options
 - `--mode {full,incremental}`: Processing mode (default: incremental)
-- `--file-type FILE_TYPE`: Process only specific file types (pdf, xlsx, docx, pptx, txt)
+- `--file-type FILE_TYPE`: Process only specific file types (pdf, xlsx, docx, pptx, txt, msg, eml)
 - `--target TARGET`: Process specific file by name (useful with --all-sheets)
 - `--all-sheets`: Process ALL sheets in Excel files (removes 15-sheet limit)
 
