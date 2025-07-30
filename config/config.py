@@ -8,9 +8,9 @@ from typing import Dict, Any, Optional
 CONFIG_PATH = Path(__file__).with_name("config.yaml")
 
 class Settings(BaseModel):
-    sync_root: Path = Field(..., description="Local document folder to watch and index")
-    db_path: Path
-    vector_path: Path
+    sync_root: Path = Field(default=Path.home() / "Documents", description="Local document folder to watch and index")
+    db_path: Path = Field(default=Path("data/docmeta.db"))
+    vector_path: Path = Field(default=Path("data/vector.index"))
     chunk_size: int = 800
     overlap: int = 150
     embed_model: str = "sentence-transformers/all-MiniLM-L6-v2"
@@ -40,4 +40,19 @@ def load_settings(overrides: Optional[Dict[str, Any]] = None) -> Settings:
         data.update(overrides)
     return Settings(**data)
 
-settings = load_settings()
+# Global settings instance - lazy loaded
+_settings: Optional[Settings] = None
+
+def get_settings() -> Settings:
+    """Get settings instance, loading on first access."""
+    global _settings
+    if _settings is None:
+        _settings = load_settings()
+    return _settings
+
+# For backward compatibility - create a proxy object that behaves like the settings
+class SettingsProxy:
+    def __getattr__(self, name):
+        return getattr(get_settings(), name)
+
+settings = SettingsProxy()
