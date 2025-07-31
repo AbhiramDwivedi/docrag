@@ -129,7 +129,8 @@ class Agent:
         # Check for metadata queries
         metadata_keywords = [
             "how many", "count", "number of", "total", "list", "show me",
-            "what files", "file types", "recently", "latest", "newest"
+            "what files", "file types", "recently", "latest", "newest", 
+            "recent files", "recent documents"
         ]
         
         if any(keyword in question_lower for keyword in metadata_keywords):
@@ -147,7 +148,9 @@ class Agent:
         
         is_content_query = (
             any(keyword in question_lower for keyword in content_keywords) or
-            not plugins_to_use  # Default to semantic search if no metadata keywords
+            (not plugins_to_use and not any(word in question_lower for word in [
+                "files", "documents", "count", "list", "show", "how many", "types"
+            ]))  # Default to semantic search only if no metadata indicators
         )
         
         if is_content_query and self.registry.get_plugin("semantic_search"):
