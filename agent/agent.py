@@ -7,7 +7,12 @@ from typing import List, Optional, Dict, Any
 from .registry import PluginRegistry
 from .plugin import Plugin
 
+# Create loggers for different aspects of agent operation
 logger = logging.getLogger(__name__)
+classification_logger = logging.getLogger('agent.classification')
+reasoning_logger = logging.getLogger('agent.reasoning')
+execution_logger = logging.getLogger('agent.execution')
+timing_logger = logging.getLogger('timing')
 
 
 class Agent:
@@ -43,12 +48,18 @@ class Agent:
         self._last_plugins_used = []
         self._reasoning_trace = []
         
+        # Log query processing start
+        classification_logger.info(f"Processing query: \"{question}\"")
+        
         try:
             # Classify query and determine appropriate plugins
             plugins_to_use = self._classify_query(question)
             
             if not plugins_to_use:
+                reasoning_logger.info("No relevant plugins found for query")
                 return "No relevant information found."
+            
+            reasoning_logger.info(f"Selected plugins: {', '.join(plugins_to_use)}")
             
             # Execute plugins and collect results
             results = []
@@ -56,23 +67,43 @@ class Agent:
                 plugin = self.registry.get_plugin(plugin_name)
                 if plugin:
                     try:
+                        plugin_start_time = time.time()
+                        execution_logger.info(f"Executing plugin: {plugin_name}")
                         self._reasoning_trace.append(f"Executing plugin: {plugin_name}")
+                        
                         params = self._prepare_params(plugin_name, question)
+                        reasoning_logger.debug(f"Plugin parameters: {params}")
                         
                         if plugin.validate_params(params):
                             result = plugin.execute(params)
+                            plugin_execution_time = time.time() - plugin_start_time
+                            
+                            # Log execution timing
+                            timing_logger.log(5, f"Plugin {plugin_name} execution", 
+                                             extra={'execution_time': plugin_execution_time})
+                            
                             results.append((plugin_name, result))
                             self._last_plugins_used.append(plugin_name)
+                            execution_logger.info(f"Plugin {plugin_name} completed successfully")
                         else:
                             logger.warning(f"Invalid parameters for plugin {plugin_name}")
+                            reasoning_logger.warning(f"Parameter validation failed for {plugin_name}")
                     except Exception as e:
                         logger.error(f"Error executing plugin {plugin_name}: {e}")
+                        reasoning_logger.error(f"Plugin {plugin_name} failed: {e}")
                         self._reasoning_trace.append(f"Plugin {plugin_name} failed: {e}")
             
             # Synthesize final response
             response = self._synthesize_response(question, results)
             
-            self._last_execution_time = time.time() - start_time
+            total_execution_time = time.time() - start_time
+            self._last_execution_time = total_execution_time
+            
+            # Log total execution time
+            timing_logger.log(5, f"Total query processing", 
+                             extra={'execution_time': total_execution_time})
+            
+            execution_logger.info(f"Query processing completed")
             return response
             
         except Exception as e:
@@ -127,6 +158,8 @@ class Agent:
         question_lower = question.lower()
         plugins_to_use = []
         
+        classification_logger.debug(f"Classifying query: \"{question}\"")
+        
         # Enhanced email query detection - use word boundaries to avoid false matches
         email_indicators = [
             "email", "emails", "mail", "sender", "sent", "received",
@@ -150,6 +183,9 @@ class Agent:
         # Check for metadata queries
         has_metadata_indicators = any(keyword in question_lower for keyword in metadata_keywords)
         
+        classification_logger.debug(f"Email indicators detected: {has_email_indicators}")
+        classification_logger.debug(f"Metadata indicators detected: {has_metadata_indicators}")
+        
         # Multi-step query detection - queries that might need both plugins
         multi_step_patterns = [
             "latest email about",
@@ -166,18 +202,21 @@ class Agent:
             # Queries like "emails from John last week" - primarily metadata
             if self.registry.get_plugin("metadata_commands"):
                 plugins_to_use.append("metadata_commands")
+                reasoning_logger.info("Detected email metadata query")
                 self._reasoning_trace.append("Detected email metadata query")
         
         elif has_email_indicators:
             # Pure email queries - route to metadata commands for enhanced processing
             if self.registry.get_plugin("metadata_commands"):
                 plugins_to_use.append("metadata_commands")
+                reasoning_logger.info("Detected email-specific query")
                 self._reasoning_trace.append("Detected email-specific query")
         
         elif has_metadata_indicators:
             # Pure metadata queries - prefer enhanced metadata commands
             if self.registry.get_plugin("metadata_commands"):
                 plugins_to_use.append("metadata_commands")
+                reasoning_logger.info("Detected metadata query keywords")
                 self._reasoning_trace.append("Detected metadata query keywords")
         
         # Check for semantic search queries
@@ -198,6 +237,7 @@ class Agent:
         if (is_content_query or is_multi_step) and self.registry.get_plugin("semantic_search"):
             if "semantic_search" not in plugins_to_use:
                 plugins_to_use.append("semantic_search")
+                reasoning_logger.info("Using semantic search for content analysis")
                 self._reasoning_trace.append("Using semantic search for content analysis")
         
         # Special handling for complex queries that benefit from both plugins
@@ -214,8 +254,10 @@ class Agent:
             for plugin_name in ["metadata_commands", "semantic_search"]:
                 if self.registry.get_plugin(plugin_name) and plugin_name not in plugins_to_use:
                     plugins_to_use.append(plugin_name)
+                    reasoning_logger.info(f"Added {plugin_name} for complex query")
                     self._reasoning_trace.append(f"Added {plugin_name} for complex query")
         
+        classification_logger.info(f"Query classified as: {plugins_to_use}")
         return plugins_to_use
     
     def _prepare_params(self, plugin_name: str, question: str) -> Dict[str, Any]:
@@ -256,8 +298,16 @@ class Agent:
             
             settings = get_settings()
             if not settings.openai_api_key:
+                reasoning_logger.info("No OpenAI API key - using fallback parsing")
                 self._reasoning_trace.append("No OpenAI API key - using fallback parsing")
                 return self._fallback_metadata_params(question)
+            
+            # Get loggers for LLM operations
+            llm_logger = logging.getLogger('llm.generation')
+            prompt_logger = logging.getLogger('llm.prompt')
+            response_logger = logging.getLogger('llm.response')
+            
+            llm_logger.info("LLM parsing with GPT-4o-mini...")
             
             # Initialize OpenAI client
             client = OpenAI(api_key=settings.openai_api_key)
@@ -295,22 +345,35 @@ Examples:
 
 Respond with only the JSON, no other text:"""
 
+            # Log the prompt at debug level
+            prompt_logger.debug("Prompt: \"You are a document metadata query parser...\"")
+            
             # Get response from LLM
+            llm_start_time = time.time()
             response = client.chat.completions.create(
                 model='gpt-4o-mini',
                 messages=[{'role': 'user', 'content': prompt}],
                 max_tokens=200,
                 temperature=0.1  # Low temperature for consistent parsing
             )
+            llm_execution_time = time.time() - llm_start_time
+            
+            # Log timing
+            timing_logger.log(5, "LLM parameter generation", 
+                             extra={'execution_time': llm_execution_time})
             
             # Parse the JSON response
             import json
             params_text = response.choices[0].message.content
             if params_text is None:
+                reasoning_logger.warning("LLM returned empty response")
                 self._reasoning_trace.append("LLM returned empty response")
                 return self._fallback_metadata_params(question)
             
             params_text = params_text.strip()
+            
+            # Log the response at debug level
+            response_logger.debug(f"Response: {params_text[:100]}{'...' if len(params_text) > 100 else ''}")
             
             # Clean up the response if needed
             if params_text.startswith('```json'):
@@ -322,13 +385,16 @@ Respond with only the JSON, no other text:"""
             required_keys = ['operation']
             for key in required_keys:
                 if key not in params:
+                    reasoning_logger.warning(f"LLM parsing missing required key: {key}")
                     self._reasoning_trace.append(f"LLM parsing missing required key: {key}")
                     return self._fallback_metadata_params(question)
             
+            reasoning_logger.info(f"LLM parsed query to operation: {params.get('operation')}")
             self._reasoning_trace.append(f"LLM parsed query to operation: {params.get('operation')}")
             return params
             
         except Exception as e:
+            reasoning_logger.warning(f"LLM parsing failed: {e}")
             self._reasoning_trace.append(f"LLM parsing failed: {e}")
             return self._fallback_metadata_params(question)
     
