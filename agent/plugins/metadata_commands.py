@@ -440,14 +440,12 @@ class MetadataCommandsPlugin(Plugin):
                 query_params.append(f"%{name_contains}%")
             
             # Note: Size and email filtering not available in basic schema
-            
-            base_query += " GROUP BY file"
         
-        # Build final query
+        # Build final query with conditions first, then GROUP BY
         if conditions:
-            query = base_query + " AND " + " AND ".join(conditions)
+            query = base_query + " AND " + " AND ".join(conditions) + " GROUP BY file"
         else:
-            query = base_query
+            query = base_query + " GROUP BY file"
         
         # Add sorting
         sort_column_map = {

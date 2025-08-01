@@ -138,7 +138,9 @@ class Agent:
             "how many", "count", "number of", "total", "list", "show me",
             "what files", "file types", "recently", "latest", "newest", 
             "recent files", "recent documents", "size", "larger", "smaller",
-            "modified", "created", "last week", "last month", "yesterday"
+            "modified", "created", "last week", "last month", "yesterday",
+            "find", "search", "get", "show", "all files", "files", "documents",
+            "pdf", "pptx", "docx", "xlsx", "msg", "txt"
         ]
         
         # Check for email-specific queries using word boundaries
@@ -276,10 +278,12 @@ class Agent:
             prompt = f"""You are a document metadata query parser. Parse the user's natural language question and convert it to structured parameters for a metadata plugin.
 
 Available operations:
-- get_latest_files: Get most recently modified files
-- find_files_by_type: Find files by type (PDF, DOCX, PPTX, XLSX, MSG, TXT)
-- get_file_stats: Get statistics about files
-- search_content: Search within file content
+- find_files: Universal file finder with comprehensive filtering (RECOMMENDED)
+- get_latest_files: Get most recently modified files (legacy)
+- find_files_by_content: Search within file content (legacy)
+- get_file_stats: Get statistics about files (legacy)
+- get_file_count: Count files with filters (legacy)
+- get_file_types: List file types in collection (legacy)
 
 Available file types: PDF, DOCX, PPTX, XLSX, MSG, TXT
 
@@ -289,7 +293,7 @@ User question: "{question}"
 
 Response must be valid JSON in this exact format:
 {{
-    "operation": "operation_name",
+    "operation": "find_files",
     "file_type": "TYPE or null",
     "count": number_or_null,
     "time_filter": "filter_or_null",
@@ -297,9 +301,9 @@ Response must be valid JSON in this exact format:
 }}
 
 Examples:
-"list all pdf files" -> {{"operation": "find_files_by_type", "file_type": "PDF", "count": null, "time_filter": null, "keywords": null}}
-"show me 5 latest emails" -> {{"operation": "get_latest_files", "file_type": "MSG", "count": 5, "time_filter": "recent", "keywords": null}}
-"how many documents from last week" -> {{"operation": "get_file_stats", "file_type": null, "count": null, "time_filter": "last_week", "keywords": null}}
+"list all pdf files" -> {{"operation": "find_files", "file_type": "PDF", "count": null, "time_filter": null, "keywords": null}}
+"show me 5 latest emails" -> {{"operation": "find_files", "file_type": "MSG", "count": 5, "time_filter": "recent", "keywords": null}}
+"how many documents from last week" -> {{"operation": "find_files", "file_type": null, "count": null, "time_filter": "last_week", "keywords": null}}
 
 Respond with only the JSON, no other text:"""
 
