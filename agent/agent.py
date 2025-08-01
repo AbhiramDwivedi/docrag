@@ -2,6 +2,7 @@
 
 import logging
 import time
+import re
 from typing import List, Optional, Dict, Any
 from .registry import PluginRegistry
 from .plugin import Plugin
@@ -115,7 +116,7 @@ class Agent:
         return "\n".join(explanation)
     
     def _classify_query(self, question: str) -> List[str]:
-        """Classify query and determine which plugins should handle it.
+        """Enhanced query classification with multi-step planning support.
         
         Args:
             question: User question to classify
@@ -126,36 +127,91 @@ class Agent:
         question_lower = question.lower()
         plugins_to_use = []
         
-        # Check for metadata queries
+        # Enhanced email query detection
+        email_indicators = [
+            "email", "emails", "mail", "sender", "sent", "received",
+            "from", "to", "subject", "message"
+        ]
+        
+        # Enhanced metadata keywords
         metadata_keywords = [
             "how many", "count", "number of", "total", "list", "show me",
             "what files", "file types", "recently", "latest", "newest", 
-            "recent files", "recent documents"
+            "recent files", "recent documents", "size", "larger", "smaller",
+            "modified", "created", "last week", "last month", "yesterday"
         ]
         
-        if any(keyword in question_lower for keyword in metadata_keywords):
+        # Check for email-specific queries
+        has_email_indicators = any(keyword in question_lower for keyword in email_indicators)
+        
+        # Check for metadata queries
+        has_metadata_indicators = any(keyword in question_lower for keyword in metadata_keywords)
+        
+        # Multi-step query detection - queries that might need both plugins
+        multi_step_patterns = [
+            "latest email about",
+            "recent email regarding", 
+            "emails about .* and related files",
+            "find .* and show",
+            "emails .* plus"
+        ]
+        
+        is_multi_step = any(re.search(pattern, question_lower) for pattern in multi_step_patterns)
+        
+        # Enhanced classification logic
+        if has_email_indicators and has_metadata_indicators:
+            # Queries like "emails from John last week" - primarily metadata
+            if self.registry.get_plugin("metadata"):
+                plugins_to_use.append("metadata")
+                self._reasoning_trace.append("Detected email metadata query")
+        
+        elif has_email_indicators:
+            # Pure email queries - route to metadata for Phase 2
+            if self.registry.get_plugin("metadata"):
+                plugins_to_use.append("metadata")
+                self._reasoning_trace.append("Detected email-specific query")
+        
+        elif has_metadata_indicators:
+            # Pure metadata queries
             if self.registry.get_plugin("metadata"):
                 plugins_to_use.append("metadata")
                 self._reasoning_trace.append("Detected metadata query keywords")
         
         # Check for semantic search queries
-        # If it's not clearly a metadata query, or if it contains content-related terms,
-        # use semantic search
         content_keywords = [
             "what is", "explain", "about", "describe", "compliance", "policy",
-            "procedure", "requirements", "contains", "mentions", "discusses"
+            "procedure", "requirements", "contains", "mentions", "discusses",
+            "content", "text", "information"
         ]
         
         is_content_query = (
             any(keyword in question_lower for keyword in content_keywords) or
             (not plugins_to_use and not any(word in question_lower for word in [
-                "files", "documents", "count", "list", "show", "how many", "types"
-            ]))  # Default to semantic search only if no metadata indicators
+                "files", "documents", "count", "list", "show", "how many", "types", "email"
+            ]))  # Default to semantic search if no clear metadata/email indicators
         )
         
-        if is_content_query and self.registry.get_plugin("semantic_search"):
-            plugins_to_use.append("semantic_search")
-            self._reasoning_trace.append("Using semantic search for content analysis")
+        # Add semantic search for content queries or multi-step queries
+        if (is_content_query or is_multi_step) and self.registry.get_plugin("semantic_search"):
+            if "semantic_search" not in plugins_to_use:
+                plugins_to_use.append("semantic_search")
+                self._reasoning_trace.append("Using semantic search for content analysis")
+        
+        # Special handling for complex queries that benefit from both plugins
+        complex_patterns = [
+            "about .* files",  # "about budget files" - content + metadata
+            "documents .* recent",  # "documents about X recent" - content + time filter
+            "find .* and list"  # "find X and list files" - content + metadata
+        ]
+        
+        is_complex = any(re.search(pattern, question_lower) for pattern in complex_patterns)
+        
+        if is_complex:
+            # Add both plugins for complex queries
+            for plugin_name in ["metadata", "semantic_search"]:
+                if self.registry.get_plugin(plugin_name) and plugin_name not in plugins_to_use:
+                    plugins_to_use.append(plugin_name)
+                    self._reasoning_trace.append(f"Added {plugin_name} for complex query")
         
         return plugins_to_use
     
@@ -181,7 +237,7 @@ class Agent:
         return params
     
     def _synthesize_response(self, question: str, results: List[tuple]) -> str:
-        """Synthesize final response from plugin results.
+        """Enhanced response synthesis with multi-step query support.
         
         Args:
             question: Original user question
@@ -198,15 +254,50 @@ class Agent:
             _, result = results[0]
             return result.get("response", "No response from plugin")
         
-        # For multiple plugins, combine results
-        # This is a simple implementation - could be enhanced with LLM synthesis
-        response_parts = []
-        for plugin_name, result in results:
-            plugin_response = result.get("response", "")
-            if plugin_response:
-                response_parts.append(plugin_response)
+        # For multiple plugins, we need intelligent synthesis
+        self._reasoning_trace.append(f"Synthesizing responses from {len(results)} plugins")
         
+        # Separate metadata and content results
+        metadata_results = []
+        content_results = []
+        
+        for plugin_name, result in results:
+            if plugin_name == "metadata":
+                metadata_results.append(result)
+            elif plugin_name == "semantic_search":
+                content_results.append(result)
+        
+        # Build combined response
+        response_parts = []
+        
+        # Start with metadata if it provides context
+        if metadata_results:
+            for metadata_result in metadata_results:
+                metadata_response = metadata_result.get("response", "")
+                if metadata_response and not metadata_response.startswith("❌"):
+                    # Check if this is providing context for content search
+                    if content_results and any(word in question.lower() for word in ["about", "regarding", "contains"]):
+                        response_parts.append(f"📊 {metadata_response}")
+                    else:
+                        response_parts.append(metadata_response)
+        
+        # Add content results with context
+        if content_results:
+            for content_result in content_results:
+                content_response = content_result.get("response", "")
+                if content_response and not content_response.startswith("❌"):
+                    if metadata_results:
+                        # If we have metadata context, introduce content section
+                        response_parts.append(f"\n📄 Content Analysis:\n{content_response}")
+                    else:
+                        response_parts.append(content_response)
+        
+        # Combine results intelligently
         if response_parts:
-            return "\n\n".join(response_parts)
+            # For queries that ask for both metadata and content, structure the response
+            if len(response_parts) > 1 and any(word in question.lower() for word in ["and", "plus", "also"]):
+                return "\n\n".join(response_parts)
+            else:
+                return "\n\n".join(response_parts)
         else:
             return "No relevant information found."
