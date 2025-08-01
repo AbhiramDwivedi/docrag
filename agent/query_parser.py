@@ -16,7 +16,7 @@ class QueryParser:
         self.file_type_map = {
             # Presentations
             'presentation': 'PPTX', 'presentations': 'PPTX', 'powerpoint': 'PPTX',
-            'ppt': 'PPT', 'pptx': 'PPTX', 'slides': 'PPTX',
+            'ppt': 'PPTX', 'pptx': 'PPTX', 'slides': 'PPTX',
             
             # Documents  
             'document': 'DOCX', 'documents': 'DOCX', 'doc': 'DOC', 'docx': 'DOCX',
@@ -156,12 +156,14 @@ class QueryParser:
         if matches:
             return int(matches[0])  # Take the first number found
         
-        # Look for word numbers - sort by length desc to match longer words first
+        # Look for word numbers with word boundaries - sort by length desc to match longer words first
         question_lower = question.lower()
         sorted_words = sorted(self.number_map.keys(), key=len, reverse=True)
         
         for word in sorted_words:
-            if word in question_lower:
+            # Use word boundaries to avoid partial matches like 'i' in 'list'
+            pattern = r'\b' + re.escape(word) + r'\b'
+            if re.search(pattern, question_lower):
                 return self.number_map[word]
         
         return None
@@ -218,5 +220,8 @@ def create_enhanced_metadata_params(question: str) -> Dict[str, Any]:
     """
     parser = QueryParser()
     operation, params = parser.parse_query(question)
+    
+    # Add the operation to the parameters dictionary
+    params["operation"] = operation
     
     return params
