@@ -8,6 +8,7 @@ clean interfaces for different metadata operations.
 import logging
 import sqlite3
 import sys
+import time
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Union
 from datetime import datetime, timedelta
@@ -21,6 +22,9 @@ from agent.plugin import Plugin, PluginInfo
 from config.config import get_settings
 
 logger = logging.getLogger(__name__)
+plugin_logger = logging.getLogger('plugin.metadata')
+sql_logger = logging.getLogger('sql.query')
+timing_logger = logging.getLogger('timing')
 
 
 class SortBy(Enum):
@@ -115,16 +119,21 @@ class MetadataCommandsPlugin(Plugin):
         """
         operation = params.get("operation")
         if not operation:
+            plugin_logger.warning("No operation specified")
             return {
                 "response": "No operation specified.",
                 "data": {},
                 "metadata": {"error": "no_operation"}
             }
         
+        plugin_logger.info(f"Operation: {operation}")
+        plugin_logger.debug(f"Parameters: {params}")
+        
         try:
             # Get database connection
             db_connection = self._get_db_connection()
             if db_connection is None:
+                plugin_logger.error("No document database found")
                 return {
                     "response": "No document database found. Please run document ingestion first.",
                     "data": {},
@@ -132,31 +141,49 @@ class MetadataCommandsPlugin(Plugin):
                 }
             
             try:
+                operation_start_time = time.time()
+                
                 # Route to unified find_files operation
                 if operation == "find_files":
-                    return self._find_files(params, db_connection)
+                    result = self._find_files(params, db_connection)
                 # Keep legacy operations for backward compatibility
                 elif operation == "get_latest_files":
-                    return self._get_latest_files(params, db_connection)
+                    result = self._get_latest_files(params, db_connection)
                 elif operation == "find_files_by_content":
-                    return self._find_files_by_content(params, db_connection)
+                    result = self._find_files_by_content(params, db_connection)
                 elif operation == "get_file_stats":
-                    return self._get_file_stats(params, db_connection)
+                    result = self._get_file_stats(params, db_connection)
                 elif operation == "get_file_count":
-                    return self._get_file_count(params, db_connection)
+                    result = self._get_file_count(params, db_connection)
                 elif operation == "get_file_types":
-                    return self._get_file_types(params, db_connection)
+                    result = self._get_file_types(params, db_connection)
                 else:
+                    plugin_logger.error(f"Unknown operation: {operation}")
                     return {
                         "response": f"Unknown operation: {operation}",
                         "data": {},
                         "metadata": {"error": "unknown_operation", "operation": operation}
                     }
+                
+                operation_execution_time = time.time() - operation_start_time
+                timing_logger.log(5, f"Operation {operation}", 
+                                 extra={'execution_time': operation_execution_time})
+                
+                # Add execution timing to result metadata
+                if 'metadata' in result:
+                    result['metadata']['execution_time'] = operation_execution_time
+                
+                file_count = result.get('metadata', {}).get('count', 0)
+                plugin_logger.info(f"Found {file_count} result(s)")
+                
+                return result
+                
             finally:
                 db_connection.close()
                 
         except Exception as e:
             logger.error(f"Error in metadata operation {operation}: {e}")
+            plugin_logger.error(f"Operation failed: {e}")
             return {
                 "response": f"❌ Error in metadata operation: {e}",
                 "data": {},
@@ -465,9 +492,17 @@ class MetadataCommandsPlugin(Plugin):
             query += " LIMIT ?"
             query_params.append(count)
         
-        # Execute query
+        # Execute query with logging
+        sql_logger.debug(f"SQL Query: {query}")
+        sql_logger.debug(f"Parameters: {query_params}")
+        
+        query_start_time = time.time()
         cursor.execute(query, query_params)
         results = cursor.fetchall()
+        query_execution_time = time.time() - query_start_time
+        
+        timing_logger.log(5, f"SQL query execution", 
+                         extra={'execution_time': query_execution_time})
         
         if not results:
             return {
