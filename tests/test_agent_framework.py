@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from agent import Agent, PluginRegistry, create_default_agent
 from agent.plugin import Plugin, PluginInfo
 from agent.plugins.semantic_search import SemanticSearchPlugin
-from agent.plugins.metadata import MetadataPlugin
+from agent.plugins.metadata_commands import MetadataCommandsPlugin
 
 
 class TestPluginRegistry:
@@ -233,39 +233,39 @@ class TestSemanticSearchPlugin:
         assert "OpenAI API key not configured" in result["response"]
 
 
-class TestMetadataPlugin:
+class TestMetadataCommandsPlugin:
     """Test the metadata plugin."""
     
     def test_plugin_info(self):
         """Test plugin info retrieval."""
-        plugin = MetadataPlugin()
+        plugin = MetadataCommandsPlugin()
         info = plugin.get_info()
         
-        assert info.name == "metadata"
-        assert "metadata_query" in info.capabilities
-        assert "file_statistics" in info.capabilities
+        assert info.name == "metadata_commands"
+        assert "find_files" in info.capabilities
+        assert "get_file_stats" in info.capabilities
     
     def test_validate_params_valid(self):
         """Test parameter validation with valid params."""
-        plugin = MetadataPlugin()
+        plugin = MetadataCommandsPlugin()
         
-        params = {"question": "how many files"}
+        params = {"operation": "find_files"}
         assert plugin.validate_params(params) is True
     
     def test_validate_params_invalid(self):
         """Test parameter validation with invalid params."""
-        plugin = MetadataPlugin()
+        plugin = MetadataCommandsPlugin()
         
-        # Missing question
+        # Missing operation
         params = {}
         assert plugin.validate_params(params) is False
         
-        # Empty question
-        params = {"question": ""}
+        # Empty operation
+        params = {"operation": ""}
         assert plugin.validate_params(params) is False
     
-    @patch('agent.plugins.metadata.sqlite3')
-    @patch('agent.plugins.metadata.Path')
+    @patch('agent.plugins.metadata_commands.sqlite3')
+    @patch('agent.plugins.metadata_commands.Path')
     def test_execute_no_database(self, mock_path, mock_sqlite):
         """Test execution when database doesn't exist."""
         # Mock Path.exists to return False
@@ -273,8 +273,8 @@ class TestMetadataPlugin:
         mock_db_path.exists.return_value = False
         mock_path.return_value = mock_db_path
         
-        plugin = MetadataPlugin()
-        result = plugin.execute({"question": "how many files"})
+        plugin = MetadataCommandsPlugin()
+        result = plugin.execute({"operation": "find_files"})
         
         assert result["metadata"]["error"] == "no_database"
         assert "No document database found" in result["response"]
@@ -287,13 +287,13 @@ class TestAgentIntegration:
         """Test creating the default agent."""
         agent = create_default_agent()
         
-        assert agent.registry.get_plugin_count() == 2  # semantic_search + metadata
+        assert agent.registry.get_plugin_count() == 2  # semantic_search + metadata_commands
         assert agent.registry.get_plugin("semantic_search") is not None
-        assert agent.registry.get_plugin("metadata") is not None
+        assert agent.registry.get_plugin("metadata_commands") is not None
         
         capabilities = agent.get_capabilities()
         assert "semantic_search" in capabilities
-        assert "metadata_query" in capabilities
+        assert "find_files" in capabilities
     
     def test_query_classification_metadata(self):
         """Test that metadata queries are properly classified."""

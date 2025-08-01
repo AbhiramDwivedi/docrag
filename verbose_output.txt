@@ -1,0 +1,22 @@
+ℹ️ Registered plugin: semantic_search v1.0.0
+ℹ️ Registered semantic search plugin
+ℹ️ Registered plugin: metadata_commands v2.0.0
+ℹ️ Registered enhanced metadata commands plugin
+ℹ️ Created enhanced agent with 2 plugins
+ℹ️ Available capabilities: ['find_files', 'get_latest_files', 'semantic_search', 'vector_search', 'get_file_types', 'content_analysis', 'document_query', 'get_file_count', 'find_files_by_content', 'get_file_stats']
+📊 Processing query: "find all pdf files"
+📊 Classifying query: "find all pdf files"
+📊 Email indicators detected: False
+📊 Metadata indicators detected: True
+🧠 Detected metadata query keywords
+📊 Query classified as: ['metadata_commands']
+🧠 Selected plugins: metadata_commands
+⚙️ Executing plugin: metadata_commands
+🧠 No OpenAI API key - using fallback parsing
+🧠 Plugin parameters: {'operation': 'find_files', 'file_type': 'PDF', 'count': None, 'time_filter': None, 'keywords': None}
+🔧 Operation: find_files
+🔧 Parameters: {'operation': 'find_files', 'file_type': 'PDF', 'count': None, 'time_filter': None, 'keywords': None}
+🔧 No document database found
+⚙️ Plugin metadata_commands completed successfully
+⚙️ Query processing completed
+No document database found. Please run document ingestion first.
