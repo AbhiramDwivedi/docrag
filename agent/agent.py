@@ -167,27 +167,18 @@ class Agent:
             if self.registry.get_plugin("metadata_commands"):
                 plugins_to_use.append("metadata_commands")
                 self._reasoning_trace.append("Detected email metadata query")
-            elif self.registry.get_plugin("metadata"):
-                plugins_to_use.append("metadata")
-                self._reasoning_trace.append("Detected email metadata query (fallback)")
         
         elif has_email_indicators:
             # Pure email queries - route to metadata commands for enhanced processing
             if self.registry.get_plugin("metadata_commands"):
                 plugins_to_use.append("metadata_commands")
                 self._reasoning_trace.append("Detected email-specific query")
-            elif self.registry.get_plugin("metadata"):
-                plugins_to_use.append("metadata")
-                self._reasoning_trace.append("Detected email-specific query (fallback)")
         
         elif has_metadata_indicators:
             # Pure metadata queries - prefer enhanced metadata commands
             if self.registry.get_plugin("metadata_commands"):
                 plugins_to_use.append("metadata_commands")
                 self._reasoning_trace.append("Detected metadata query keywords")
-            elif self.registry.get_plugin("metadata"):
-                plugins_to_use.append("metadata")
-                self._reasoning_trace.append("Detected metadata query keywords (fallback)")
         
         # Check for semantic search queries
         content_keywords = [
@@ -220,13 +211,10 @@ class Agent:
         
         if is_complex:
             # Add both plugins for complex queries
-            for plugin_name in ["metadata_commands", "metadata", "semantic_search"]:
+            for plugin_name in ["metadata_commands", "semantic_search"]:
                 if self.registry.get_plugin(plugin_name) and plugin_name not in plugins_to_use:
                     plugins_to_use.append(plugin_name)
                     self._reasoning_trace.append(f"Added {plugin_name} for complex query")
-                    # Only add one metadata plugin to avoid conflicts
-                    if plugin_name in ["metadata_commands", "metadata"]:
-                        break
         
         return plugins_to_use
     
@@ -357,13 +345,13 @@ Respond with only the JSON, no other text:"""
         
         # Simple operation detection
         if any(word in question_lower for word in ['latest', 'recent', 'newest']):
-            operation = 'get_latest_files'
+            operation = 'find_files'
         elif any(word in question_lower for word in ['how many', 'count', 'number']):
-            operation = 'get_file_stats'
+            operation = 'find_files'
         elif any(word in question_lower for word in ['list', 'show', 'find']):
-            operation = 'find_files_by_type'
+            operation = 'find_files'
         else:
-            operation = 'search_content'
+            operation = 'find_files'
         
         # Simple file type detection
         file_type = None

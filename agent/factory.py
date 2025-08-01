@@ -9,7 +9,6 @@ from typing import Optional
 from .agent import Agent
 from .registry import PluginRegistry
 from .plugins.semantic_search import SemanticSearchPlugin
-from .plugins.metadata_legacy import MetadataPlugin as MetadataLegacyPlugin
 from .plugins.metadata_commands import MetadataCommandsPlugin
 
 logger = logging.getLogger(__name__)
@@ -95,7 +94,6 @@ def create_agent_with_plugins(plugin_names: Optional[list] = None) -> Agent:
     # Available plugins
     available_plugins = {
         "semantic_search": SemanticSearchPlugin,
-        "metadata_legacy": MetadataLegacyPlugin,
         "metadata_commands": MetadataCommandsPlugin
     }
     
