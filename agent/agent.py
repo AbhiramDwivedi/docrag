@@ -127,7 +127,7 @@ class Agent:
         question_lower = question.lower()
         plugins_to_use = []
         
-        # Enhanced email query detection
+        # Enhanced email query detection - use word boundaries to avoid false matches
         email_indicators = [
             "email", "emails", "mail", "sender", "sent", "received",
             "from", "to", "subject", "message"
@@ -138,11 +138,14 @@ class Agent:
             "how many", "count", "number of", "total", "list", "show me",
             "what files", "file types", "recently", "latest", "newest", 
             "recent files", "recent documents", "size", "larger", "smaller",
-            "modified", "created", "last week", "last month", "yesterday"
+            "modified", "created", "last week", "last month", "yesterday",
+            "find", "search", "get", "show", "all files", "files", "documents",
+            "pdf", "pptx", "docx", "xlsx", "msg", "txt"
         ]
         
-        # Check for email-specific queries
-        has_email_indicators = any(keyword in question_lower for keyword in email_indicators)
+        # Check for email-specific queries using word boundaries
+        has_email_indicators = any(re.search(r'\b' + re.escape(keyword) + r'\b', question_lower) 
+                                  for keyword in email_indicators)
         
         # Check for metadata queries
         has_metadata_indicators = any(keyword in question_lower for keyword in metadata_keywords)
@@ -161,20 +164,20 @@ class Agent:
         # Enhanced classification logic
         if has_email_indicators and has_metadata_indicators:
             # Queries like "emails from John last week" - primarily metadata
-            if self.registry.get_plugin("metadata"):
-                plugins_to_use.append("metadata")
+            if self.registry.get_plugin("metadata_commands"):
+                plugins_to_use.append("metadata_commands")
                 self._reasoning_trace.append("Detected email metadata query")
         
         elif has_email_indicators:
-            # Pure email queries - route to metadata for Phase 2
-            if self.registry.get_plugin("metadata"):
-                plugins_to_use.append("metadata")
+            # Pure email queries - route to metadata commands for enhanced processing
+            if self.registry.get_plugin("metadata_commands"):
+                plugins_to_use.append("metadata_commands")
                 self._reasoning_trace.append("Detected email-specific query")
         
         elif has_metadata_indicators:
-            # Pure metadata queries
-            if self.registry.get_plugin("metadata"):
-                plugins_to_use.append("metadata")
+            # Pure metadata queries - prefer enhanced metadata commands
+            if self.registry.get_plugin("metadata_commands"):
+                plugins_to_use.append("metadata_commands")
                 self._reasoning_trace.append("Detected metadata query keywords")
         
         # Check for semantic search queries
@@ -208,7 +211,7 @@ class Agent:
         
         if is_complex:
             # Add both plugins for complex queries
-            for plugin_name in ["metadata", "semantic_search"]:
+            for plugin_name in ["metadata_commands", "semantic_search"]:
                 if self.registry.get_plugin(plugin_name) and plugin_name not in plugins_to_use:
                     plugins_to_use.append(plugin_name)
                     self._reasoning_trace.append(f"Added {plugin_name} for complex query")
@@ -225,16 +228,167 @@ class Agent:
         Returns:
             Dictionary of parameters for the plugin
         """
-        # Basic parameters that all plugins might need
+        # Plugin-specific parameter preparation
+        if plugin_name == "metadata_commands":
+            # Use LLM to generate structured metadata commands
+            return self._generate_metadata_params_with_llm(question)
+        
+        # Basic parameters for other plugins
         params = {
             "question": question,
             "query": question,  # Alias for compatibility
         }
         
-        # Plugin-specific parameter preparation could be added here
-        # For now, we use the same basic parameters for all plugins
-        
         return params
+    
+    def _generate_metadata_params_with_llm(self, question: str) -> Dict[str, Any]:
+        """Use LLM to generate structured metadata command parameters.
+        
+        Args:
+            question: Natural language question
+            
+        Returns:
+            Dictionary of structured parameters for MetadataCommandsPlugin
+        """
+        try:
+            from openai import OpenAI
+            from config.config import get_settings
+            
+            settings = get_settings()
+            if not settings.openai_api_key:
+                self._reasoning_trace.append("No OpenAI API key - using fallback parsing")
+                return self._fallback_metadata_params(question)
+            
+            # Initialize OpenAI client
+            client = OpenAI(api_key=settings.openai_api_key)
+            
+            # Create a prompt for the LLM to understand the query and generate structured parameters
+            prompt = f"""You are a document metadata query parser. Parse the user's natural language question and convert it to structured parameters for a metadata plugin.
+
+Available operations:
+- find_files: Universal file finder with comprehensive filtering (RECOMMENDED)
+- get_latest_files: Get most recently modified files (legacy)
+- find_files_by_content: Search within file content (legacy)
+- get_file_stats: Get statistics about files (legacy)
+- get_file_count: Count files with filters (legacy)
+- get_file_types: List file types in collection (legacy)
+
+Available file types: PDF, DOCX, PPTX, XLSX, MSG, TXT
+
+Available time filters: recent, last_week, last_month, yesterday, today
+
+User question: "{question}"
+
+Response must be valid JSON in this exact format:
+{{
+    "operation": "find_files",
+    "file_type": "TYPE or null",
+    "count": number_or_null,
+    "time_filter": "filter_or_null",
+    "keywords": ["keyword1", "keyword2"] or null
+}}
+
+Examples:
+"list all pdf files" -> {{"operation": "find_files", "file_type": "PDF", "count": null, "time_filter": null, "keywords": null}}
+"show me 5 latest emails" -> {{"operation": "find_files", "file_type": "MSG", "count": 5, "time_filter": "recent", "keywords": null}}
+"how many documents from last week" -> {{"operation": "find_files", "file_type": null, "count": null, "time_filter": "last_week", "keywords": null}}
+
+Respond with only the JSON, no other text:"""
+
+            # Get response from LLM
+            response = client.chat.completions.create(
+                model='gpt-4o-mini',
+                messages=[{'role': 'user', 'content': prompt}],
+                max_tokens=200,
+                temperature=0.1  # Low temperature for consistent parsing
+            )
+            
+            # Parse the JSON response
+            import json
+            params_text = response.choices[0].message.content
+            if params_text is None:
+                self._reasoning_trace.append("LLM returned empty response")
+                return self._fallback_metadata_params(question)
+            
+            params_text = params_text.strip()
+            
+            # Clean up the response if needed
+            if params_text.startswith('```json'):
+                params_text = params_text.replace('```json', '').replace('```', '').strip()
+            
+            params = json.loads(params_text)
+            
+            # Validate the parsed parameters
+            required_keys = ['operation']
+            for key in required_keys:
+                if key not in params:
+                    self._reasoning_trace.append(f"LLM parsing missing required key: {key}")
+                    return self._fallback_metadata_params(question)
+            
+            self._reasoning_trace.append(f"LLM parsed query to operation: {params.get('operation')}")
+            return params
+            
+        except Exception as e:
+            self._reasoning_trace.append(f"LLM parsing failed: {e}")
+            return self._fallback_metadata_params(question)
+    
+    def _fallback_metadata_params(self, question: str) -> Dict[str, Any]:
+        """Fallback parameter generation using simple keyword matching.
+        
+        Args:
+            question: Natural language question
+            
+        Returns:
+            Dictionary of basic parameters
+        """
+        question_lower = question.lower()
+        
+        # Simple operation detection
+        if any(word in question_lower for word in ['latest', 'recent', 'newest']):
+            operation = 'find_files'
+        elif any(word in question_lower for word in ['how many', 'count', 'number']):
+            operation = 'find_files'
+        elif any(word in question_lower for word in ['list', 'show', 'find']):
+            operation = 'find_files'
+        else:
+            operation = 'find_files'
+        
+        # Simple file type detection
+        file_type = None
+        if any(word in question_lower for word in ['email', 'mail', 'msg']):
+            file_type = 'MSG'
+        elif any(word in question_lower for word in ['pdf']):
+            file_type = 'PDF'
+        elif any(word in question_lower for word in ['doc', 'docx', 'document']):
+            file_type = 'DOCX'
+        elif any(word in question_lower for word in ['ppt', 'pptx', 'presentation']):
+            file_type = 'PPTX'
+        elif any(word in question_lower for word in ['xls', 'xlsx', 'spreadsheet']):
+            file_type = 'XLSX'
+        
+        # Simple count detection
+        count = None
+        import re
+        count_match = re.search(r'\b(\d+)\b', question)
+        if count_match:
+            count = int(count_match.group(1))
+        
+        # Simple time filter detection
+        time_filter = None
+        if 'last week' in question_lower:
+            time_filter = 'last_week'
+        elif 'last month' in question_lower:
+            time_filter = 'last_month'
+        elif any(word in question_lower for word in ['recent', 'latest']):
+            time_filter = 'recent'
+        
+        return {
+            'operation': operation,
+            'file_type': file_type,
+            'count': count,
+            'time_filter': time_filter,
+            'keywords': None
+        }
     
     def _synthesize_response(self, question: str, results: List[tuple]) -> str:
         """Enhanced response synthesis with multi-step query support.
