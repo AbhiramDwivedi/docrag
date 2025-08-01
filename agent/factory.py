@@ -10,8 +10,44 @@ from .agent import Agent
 from .registry import PluginRegistry
 from .plugins.semantic_search import SemanticSearchPlugin
 from .plugins.metadata import MetadataPlugin
+from .plugins.metadata_commands import MetadataCommandsPlugin
 
 logger = logging.getLogger(__name__)
+
+
+def create_enhanced_agent() -> Agent:
+    """Create an agent with enhanced metadata functionality.
+    
+    This agent uses the new structured metadata commands plugin instead
+    of the old NLP-based metadata plugin.
+    
+    Returns:
+        Configured Agent instance with semantic search and enhanced metadata plugins
+    """
+    registry = PluginRegistry()
+    
+    # Register core plugins
+    try:
+        semantic_plugin = SemanticSearchPlugin()
+        registry.register(semantic_plugin)
+        logger.info("Registered semantic search plugin")
+    except Exception as e:
+        logger.error(f"Failed to register semantic search plugin: {e}")
+    
+    try:
+        # Use the new structured metadata commands plugin
+        metadata_plugin = MetadataCommandsPlugin()
+        registry.register(metadata_plugin)
+        logger.info("Registered enhanced metadata commands plugin")
+    except Exception as e:
+        logger.error(f"Failed to register metadata commands plugin: {e}")
+    
+    agent = Agent(registry)
+    
+    logger.info(f"Created enhanced agent with {registry.get_plugin_count()} plugins")
+    logger.info(f"Available capabilities: {agent.get_capabilities()}")
+    
+    return agent
 
 
 def create_default_agent() -> Agent:
@@ -59,7 +95,8 @@ def create_agent_with_plugins(plugin_names: Optional[list] = None) -> Agent:
     # Available plugins
     available_plugins = {
         "semantic_search": SemanticSearchPlugin,
-        "metadata": MetadataPlugin
+        "metadata": MetadataPlugin,
+        "metadata_commands": MetadataCommandsPlugin
     }
     
     # Use all plugins if none specified

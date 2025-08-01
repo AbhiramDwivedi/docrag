@@ -127,7 +127,7 @@ class Agent:
         question_lower = question.lower()
         plugins_to_use = []
         
-        # Enhanced email query detection
+        # Enhanced email query detection - use word boundaries to avoid false matches
         email_indicators = [
             "email", "emails", "mail", "sender", "sent", "received",
             "from", "to", "subject", "message"
@@ -141,8 +141,9 @@ class Agent:
             "modified", "created", "last week", "last month", "yesterday"
         ]
         
-        # Check for email-specific queries
-        has_email_indicators = any(keyword in question_lower for keyword in email_indicators)
+        # Check for email-specific queries using word boundaries
+        has_email_indicators = any(re.search(r'\b' + re.escape(keyword) + r'\b', question_lower) 
+                                  for keyword in email_indicators)
         
         # Check for metadata queries
         has_metadata_indicators = any(keyword in question_lower for keyword in metadata_keywords)
@@ -161,21 +162,30 @@ class Agent:
         # Enhanced classification logic
         if has_email_indicators and has_metadata_indicators:
             # Queries like "emails from John last week" - primarily metadata
-            if self.registry.get_plugin("metadata"):
-                plugins_to_use.append("metadata")
+            if self.registry.get_plugin("metadata_commands"):
+                plugins_to_use.append("metadata_commands")
                 self._reasoning_trace.append("Detected email metadata query")
+            elif self.registry.get_plugin("metadata"):
+                plugins_to_use.append("metadata")
+                self._reasoning_trace.append("Detected email metadata query (fallback)")
         
         elif has_email_indicators:
-            # Pure email queries - route to metadata for Phase 2
-            if self.registry.get_plugin("metadata"):
-                plugins_to_use.append("metadata")
+            # Pure email queries - route to metadata commands for enhanced processing
+            if self.registry.get_plugin("metadata_commands"):
+                plugins_to_use.append("metadata_commands")
                 self._reasoning_trace.append("Detected email-specific query")
+            elif self.registry.get_plugin("metadata"):
+                plugins_to_use.append("metadata")
+                self._reasoning_trace.append("Detected email-specific query (fallback)")
         
         elif has_metadata_indicators:
-            # Pure metadata queries
-            if self.registry.get_plugin("metadata"):
-                plugins_to_use.append("metadata")
+            # Pure metadata queries - prefer enhanced metadata commands
+            if self.registry.get_plugin("metadata_commands"):
+                plugins_to_use.append("metadata_commands")
                 self._reasoning_trace.append("Detected metadata query keywords")
+            elif self.registry.get_plugin("metadata"):
+                plugins_to_use.append("metadata")
+                self._reasoning_trace.append("Detected metadata query keywords (fallback)")
         
         # Check for semantic search queries
         content_keywords = [
@@ -208,10 +218,13 @@ class Agent:
         
         if is_complex:
             # Add both plugins for complex queries
-            for plugin_name in ["metadata", "semantic_search"]:
+            for plugin_name in ["metadata_commands", "metadata", "semantic_search"]:
                 if self.registry.get_plugin(plugin_name) and plugin_name not in plugins_to_use:
                     plugins_to_use.append(plugin_name)
                     self._reasoning_trace.append(f"Added {plugin_name} for complex query")
+                    # Only add one metadata plugin to avoid conflicts
+                    if plugin_name in ["metadata_commands", "metadata"]:
+                        break
         
         return plugins_to_use
     
@@ -225,14 +238,17 @@ class Agent:
         Returns:
             Dictionary of parameters for the plugin
         """
-        # Basic parameters that all plugins might need
+        # Plugin-specific parameter preparation
+        if plugin_name == "metadata_commands":
+            # Use enhanced query parser for structured metadata commands
+            from .query_parser import create_enhanced_metadata_params
+            return create_enhanced_metadata_params(question)
+        
+        # Basic parameters for other plugins
         params = {
             "question": question,
             "query": question,  # Alias for compatibility
         }
-        
-        # Plugin-specific parameter preparation could be added here
-        # For now, we use the same basic parameters for all plugins
         
         return params
     

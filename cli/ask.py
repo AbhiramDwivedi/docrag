@@ -4,7 +4,7 @@ from pathlib import Path
 # Add parent directory to path so we can import from the project root
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from agent import create_default_agent
+from agent import create_default_agent, create_enhanced_agent
 
 # Global agent instance - initialized on first use
 _agent = None
@@ -13,7 +13,7 @@ def get_agent():
     """Get the global agent instance, creating it if necessary."""
     global _agent
     if _agent is None:
-        _agent = create_default_agent()
+        _agent = create_enhanced_agent()  # Use enhanced agent with structured metadata
     return _agent
 
 def answer(question: str) -> str:
