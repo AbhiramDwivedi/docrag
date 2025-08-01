@@ -7,11 +7,10 @@ The goal of this repo is to build **DocQuest** - a local RAG pipeline that quest
 ## General coding guidelines
 
 1. **Target runtimes**  
-   * Python ≥ 3.11  
-   * Node (LTS) for the optional Next.js UI
+   * Python ≥ 3.11
 2. **Style & tooling**  
    * Use **type hints**, `dataclasses`/`pydantic`, and Google‑style docstrings.  
-   * Format Python with **Black (PEP 8, 88 char line length)**; format JS/TS with **Prettier**.  
+   * Format Python with **Black (PEP 8, 88 char line length)**.  
    * Prefer `pathlib.Path` over `os.path` for file paths.  
    * Windows is the primary dev environment—assume backslashes in examples.
 3. **Testing**  
@@ -40,14 +39,26 @@ The goal of this repo is to build **DocQuest** - a local RAG pipeline that quest
 * **CLI (`cli/ask.py`)**  
   * Answers must cite file path + unit id in plain text.  
   * If no context retrieved, return: *"No relevant information found."*.
+* **Agent Framework (`agent/`)**  
+  * Use plugin-based architecture for extensibility.  
+  * Maintain backward compatibility with existing CLI interface.  
+  * All plugins must implement the Plugin interface with `execute()`, `get_info()`, and `validate_params()` methods.
+* **API (`api/app.py`)**  
+  * FastAPI endpoints should integrate with the agent framework.  
+  * Maintain RESTful design patterns and proper error handling.
 
 ---
 
-## JavaScript / Next.js UI rules
+## Documentation and Architecture
 
-* Scaffold with **`create‑next‑app`** (App Router).  
-* Use **shadcn/ui** components and **TailwindCSS** (already configured in the template).  
-* Fetch answers from FastAPI with `SSE` and stream them to the chat panel.
+* **Documentation Review**  
+  * Regularly review and update all documentation files including README.md, architecture diagrams, and API documentation.  
+  * Ensure documentation accurately reflects current implementation and features.  
+  * Update design diagrams when architectural changes are made.
+* **Architecture Documentation**  
+  * Maintain clear architecture diagrams showing component relationships.  
+  * Document data flow patterns and integration points.  
+  * Keep plugin architecture documentation current with implemented plugins.
 
 ---
 
@@ -66,8 +77,11 @@ data/**
 
 * "Implement the PDF extractor"
 * "Write unit tests for chunker.py"
-* "Generate a React chat component that streams SSE"
+* "Review and update the architecture documentation"
+* "Update the design diagrams to reflect current implementation"
 * "Refactor ingest.py to use async batching"
+* "Add a new plugin to the agent framework"
+* "Review and update the README.md documentation"
 
 ---
 
