@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional, Union
 from datetime import datetime, timedelta
 from dataclasses import dataclass
+from enum import Enum
 
 # Add parent directories to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -20,6 +21,34 @@ from agent.plugin import Plugin, PluginInfo
 from config.config import get_settings
 
 logger = logging.getLogger(__name__)
+
+
+class SortBy(Enum):
+    """Supported sort criteria."""
+    MODIFIED = "modified"
+    CREATED = "created" 
+    NAME = "name"
+    SIZE = "size"
+    TYPE = "type"
+
+
+class SortOrder(Enum):
+    """Sort order options."""
+    ASC = "asc"
+    DESC = "desc"
+
+
+class TimeFilter(Enum):
+    """Supported time filter keywords."""
+    TODAY = "today"
+    YESTERDAY = "yesterday"
+    THIS_WEEK = "this_week"
+    LAST_WEEK = "last_week"
+    THIS_MONTH = "this_month"
+    LAST_MONTH = "last_month"
+    RECENT = "recent"
+    LATEST = "latest"
+    NEWEST = "newest"
 
 
 @dataclass
@@ -103,8 +132,11 @@ class MetadataCommandsPlugin(Plugin):
                 }
             
             try:
-                # Route to specific operation handler
-                if operation == "get_latest_files":
+                # Route to unified find_files operation
+                if operation == "find_files":
+                    return self._find_files(params, db_connection)
+                # Keep legacy operations for backward compatibility
+                elif operation == "get_latest_files":
                     return self._get_latest_files(params, db_connection)
                 elif operation == "find_files_by_content":
                     return self._find_files_by_content(params, db_connection)
@@ -136,21 +168,53 @@ class MetadataCommandsPlugin(Plugin):
         return PluginInfo(
             name="metadata_commands",
             description="Structured metadata operations with programmatic interface",
-            version="1.0.0",
+            version="2.0.0",
             capabilities=[
+                "find_files",  # Primary unified operation
+                # Legacy operations for backward compatibility
                 "get_latest_files",
-                "find_files_by_content",
+                "find_files_by_content", 
                 "get_file_stats",
                 "get_file_count",
                 "get_file_types"
             ],
             parameters={
-                "operation": "str - The operation to execute",
-                "file_type": "str - Optional file type filter (PDF, DOCX, MSG, PPTX, etc.)",
-                "count": "int - Number of items to return",
-                "time_filter": "str - Time filter (last_week, last_month, recent, etc.)",
-                "keywords": "list - Keywords to search for",
-                "size_filter": "dict - Size filter parameters"
+                # Primary find_files operation
+                "operation": "str - The operation to execute (find_files recommended)",
+                
+                # File filtering
+                "file_type": "str - File type filter (PDF, DOCX, MSG, PPTX, etc.)",
+                "file_types": "list - Multiple file types",
+                
+                # Size filtering  
+                "min_size_mb": "float - Minimum file size in MB",
+                "max_size_mb": "float - Maximum file size in MB",
+                "min_size_bytes": "int - Minimum file size in bytes",
+                "max_size_bytes": "int - Maximum file size in bytes",
+                
+                # Date filtering
+                "created_after": "str - ISO date or relative time (2024-01-01, last_week)",
+                "created_before": "str - ISO date or relative time", 
+                "modified_after": "str - ISO date or relative time",
+                "modified_before": "str - ISO date or relative time",
+                
+                # Path filtering
+                "path_contains": "str - Partial path match",
+                "name_contains": "str - Filename contains text",
+                
+                # Email metadata (enhanced schema only)
+                "sender_email": "str - Sender email address",
+                "subject_contains": "str - Subject line keywords",
+                
+                # Output control
+                "count": "int - Max results (default: 50, use -1 for all)",
+                "sort_by": "str - Sort field: modified|created|name|size|type",
+                "sort_order": "str - Sort direction: asc|desc",
+                "include_full_path": "bool - Return absolute paths (default: true)",
+                
+                # Legacy parameters
+                "time_filter": "str - Legacy time filter (last_week, last_month, etc.)",
+                "keywords": "list - Legacy content keywords"
             }
         )
     
@@ -190,6 +254,307 @@ class MetadataCommandsPlugin(Plugin):
             return now - timedelta(days=7)
         
         return None
+    
+    def _parse_date_filter(self, date_str: str) -> Optional[datetime]:
+        """Parse date string into datetime object.
+        
+        Supports both ISO dates (2024-01-01) and relative keywords (last_week).
+        """
+        if not date_str:
+            return None
+            
+        # Try relative keywords first
+        if date_str in [e.value for e in TimeFilter]:
+            return self._parse_time_filter(date_str)
+        
+        # Try ISO date formats
+        try:
+            # Try various date formats
+            for fmt in ["%Y-%m-%d", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"]:
+                try:
+                    return datetime.strptime(date_str, fmt)
+                except ValueError:
+                    continue
+        except Exception:
+            pass
+            
+        logger.warning(f"Could not parse date string: {date_str}")
+        return None
+    
+    def _find_files(self, params: Dict[str, Any], db_connection) -> Dict[str, Any]:
+        """Unified file finder with comprehensive metadata filtering.
+        
+        This is the primary operation that supports all metadata-based filtering.
+        """
+        cursor = db_connection.cursor()
+        
+        # Extract parameters with defaults
+        file_type = params.get("file_type")
+        file_types = params.get("file_types", [])
+        
+        # Size filtering
+        min_size_mb = params.get("min_size_mb")
+        max_size_mb = params.get("max_size_mb")
+        min_size_bytes = params.get("min_size_bytes")
+        max_size_bytes = params.get("max_size_bytes")
+        
+        # Date filtering
+        created_after = params.get("created_after")
+        created_before = params.get("created_before")
+        modified_after = params.get("modified_after")
+        modified_before = params.get("modified_before")
+        
+        # Path filtering
+        path_contains = params.get("path_contains")
+        name_contains = params.get("name_contains")
+        
+        # Email metadata
+        sender_email = params.get("sender_email")
+        subject_contains = params.get("subject_contains")
+        
+        # Output control
+        count = params.get("count", 50)
+        if count == -1:
+            count = None  # No limit
+        sort_by = params.get("sort_by", SortBy.MODIFIED.value)
+        sort_order = params.get("sort_order", SortOrder.DESC.value)
+        include_full_path = params.get("include_full_path", True)
+        
+        # Convert size MB to bytes
+        if min_size_mb:
+            min_size_bytes = int(min_size_mb * 1024 * 1024)
+        if max_size_mb:
+            max_size_bytes = int(max_size_mb * 1024 * 1024)
+        
+        # Check if enhanced schema is available
+        has_enhanced = self._has_enhanced_schema(db_connection)
+        
+        conditions = []
+        query_params = []
+        
+        if has_enhanced:
+            # Use enhanced schema with files table
+            base_query = "SELECT f.file_name, f.file_path, f.file_size, f.modified_time, f.file_type, f.created_time"
+            
+            # Add email-specific fields if available
+            try:
+                cursor.execute("PRAGMA table_info(files)")
+                columns = [col[1] for col in cursor.fetchall()]
+                if "sender_email" in columns:
+                    base_query += ", f.sender_email, f.subject"
+                else:
+                    base_query += ", NULL as sender_email, NULL as subject"
+            except:
+                base_query += ", NULL as sender_email, NULL as subject"
+                
+            base_query += " FROM files f WHERE 1=1"
+            
+            # File type filtering
+            if file_type or file_types:
+                types_to_filter = [file_type] if file_type else []
+                types_to_filter.extend(file_types)
+                if types_to_filter:
+                    type_conditions = []
+                    for ft in types_to_filter:
+                        type_conditions.append("f.file_type = ?")
+                        query_params.append(ft.upper())
+                    conditions.append(f"({' OR '.join(type_conditions)})")
+            
+            # Size filtering
+            if min_size_bytes:
+                conditions.append("f.file_size >= ?")
+                query_params.append(min_size_bytes)
+            if max_size_bytes:
+                conditions.append("f.file_size <= ?")
+                query_params.append(max_size_bytes)
+            
+            # Date filtering
+            if created_after:
+                date_after = self._parse_date_filter(created_after)
+                if date_after:
+                    conditions.append("f.created_time >= ?")
+                    query_params.append(date_after.timestamp())
+            if created_before:
+                date_before = self._parse_date_filter(created_before)
+                if date_before:
+                    conditions.append("f.created_time <= ?")
+                    query_params.append(date_before.timestamp())
+            if modified_after:
+                date_after = self._parse_date_filter(modified_after)
+                if date_after:
+                    conditions.append("f.modified_time >= ?")
+                    query_params.append(date_after.timestamp())
+            if modified_before:
+                date_before = self._parse_date_filter(modified_before)
+                if date_before:
+                    conditions.append("f.modified_time <= ?")
+                    query_params.append(date_before.timestamp())
+            
+            # Path filtering
+            if path_contains:
+                conditions.append("f.file_path LIKE ?")
+                query_params.append(f"%{path_contains}%")
+            if name_contains:
+                conditions.append("f.file_name LIKE ?")
+                query_params.append(f"%{name_contains}%")
+            
+            # Email metadata filtering
+            if sender_email:
+                conditions.append("f.sender_email = ?")
+                query_params.append(sender_email)
+            if subject_contains:
+                conditions.append("f.subject LIKE ?")
+                query_params.append(f"%{subject_contains}%")
+                
+        else:
+            # Use basic schema with chunks table
+            base_query = "SELECT DISTINCT file, MAX(mtime) as latest_mtime"
+            base_query += " FROM chunks WHERE current = 1"
+            
+            # File type filtering
+            if file_type or file_types:
+                types_to_filter = [file_type] if file_type else []
+                types_to_filter.extend(file_types)
+                if types_to_filter:
+                    ext_map = {
+                        "PDF": ".pdf", "DOCX": ".docx", "DOC": ".doc",
+                        "XLSX": ".xlsx", "XLS": ".xls", "PPTX": ".pptx",
+                        "PPT": ".ppt", "MSG": ".msg", "TXT": ".txt"
+                    }
+                    type_conditions = []
+                    for ft in types_to_filter:
+                        ext = ext_map.get(ft.upper())
+                        if ext:
+                            type_conditions.append("file LIKE ?")
+                            query_params.append(f"%{ext}")
+                    if type_conditions:
+                        conditions.append(f"({' OR '.join(type_conditions)})")
+            
+            # Path filtering
+            if path_contains:
+                conditions.append("file LIKE ?")
+                query_params.append(f"%{path_contains}%")
+            if name_contains:
+                # Extract filename from path for filtering
+                conditions.append("SUBSTR(file, INSTR(file, '/') + 1) LIKE ?")
+                query_params.append(f"%{name_contains}%")
+            
+            # Note: Size and email filtering not available in basic schema
+            
+            base_query += " GROUP BY file"
+        
+        # Build final query
+        if conditions:
+            query = base_query + " AND " + " AND ".join(conditions)
+        else:
+            query = base_query
+        
+        # Add sorting
+        sort_column_map = {
+            SortBy.MODIFIED.value: "f.modified_time" if has_enhanced else "latest_mtime",
+            SortBy.CREATED.value: "f.created_time" if has_enhanced else "latest_mtime", 
+            SortBy.NAME.value: "f.file_name" if has_enhanced else "file",
+            SortBy.SIZE.value: "f.file_size" if has_enhanced else "latest_mtime",
+            SortBy.TYPE.value: "f.file_type" if has_enhanced else "file"
+        }
+        
+        sort_col = sort_column_map.get(sort_by, sort_column_map[SortBy.MODIFIED.value])
+        sort_dir = "DESC" if sort_order.upper() == SortOrder.DESC.value.upper() else "ASC"
+        query += f" ORDER BY {sort_col} {sort_dir}"
+        
+        # Add limit
+        if count:
+            query += " LIMIT ?"
+            query_params.append(count)
+        
+        # Execute query
+        cursor.execute(query, query_params)
+        results = cursor.fetchall()
+        
+        if not results:
+            return {
+                "response": "No files found matching the specified criteria.",
+                "data": {"files": []},
+                "metadata": {"operation": "find_files", "count": 0, "total_count": 0}
+            }
+        
+        # Format results
+        files_data = []
+        file_list = []
+        
+        for row in results:
+            if has_enhanced:
+                file_name, file_path, file_size, modified_time, file_type_db = row[:5]
+                created_time = row[5] if len(row) > 5 else modified_time
+                sender_email_val = row[6] if len(row) > 6 else None
+                subject_val = row[7] if len(row) > 7 else None
+                
+                file_info = {
+                    "name": file_name,
+                    "path": file_path if include_full_path else file_name,
+                    "size": file_size,
+                    "size_mb": round(file_size / (1024 * 1024), 2) if file_size else 0,
+                    "modified": modified_time,
+                    "created": created_time,
+                    "type": file_type_db
+                }
+                
+                if sender_email_val:
+                    file_info["sender"] = sender_email_val
+                if subject_val:
+                    file_info["subject"] = subject_val
+                
+                try:
+                    date_str = datetime.fromtimestamp(modified_time).strftime("%Y-%m-%d %H:%M")
+                    size_mb = file_info["size_mb"]
+                    file_list.append(f"• {file_name} ({size_mb}MB, {date_str})")
+                except (ValueError, OSError):
+                    file_list.append(f"• {file_name}")
+                    
+            else:
+                # Basic schema
+                file_path, modified_time = row
+                file_name = Path(file_path).name
+                
+                file_info = {
+                    "name": file_name,
+                    "path": file_path if include_full_path else file_name,
+                    "modified": modified_time
+                }
+                
+                try:
+                    date_str = datetime.fromtimestamp(modified_time).strftime("%Y-%m-%d %H:%M")
+                    file_list.append(f"• {file_name} ({date_str})")
+                except (ValueError, OSError):
+                    file_list.append(f"• {file_name}")
+            
+            files_data.append(file_info)
+        
+        # Build response
+        response_parts = []
+        if count and len(results) == count:
+            response_parts.append(f"Found {len(results)} files (showing first {count}):")
+        else:
+            response_parts.append(f"Found {len(results)} files:")
+        
+        response_parts.extend(file_list[:10])  # Show first 10 in summary
+        if len(file_list) > 10:
+            response_parts.append(f"... and {len(file_list) - 10} more files")
+        
+        return {
+            "response": "\n".join(response_parts),
+            "data": {
+                "files": files_data,
+                "total_count": len(results),
+                "returned_count": len(results)
+            },
+            "metadata": {
+                "operation": "find_files",
+                "count": len(results),
+                "schema_type": "enhanced" if has_enhanced else "basic",
+                "filters_applied": {k: v for k, v in params.items() if v is not None and k != "operation"}
+            }
+        }
     
     def _get_latest_files(self, params: Dict[str, Any], db_connection) -> Dict[str, Any]:
         """Get latest modified files with optional filters."""

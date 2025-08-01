@@ -240,9 +240,8 @@ class Agent:
         """
         # Plugin-specific parameter preparation
         if plugin_name == "metadata_commands":
-            # Use enhanced query parser for structured metadata commands
-            from .query_parser import create_enhanced_metadata_params
-            return create_enhanced_metadata_params(question)
+            # Use LLM to generate structured metadata commands
+            return self._generate_metadata_params_with_llm(question)
         
         # Basic parameters for other plugins
         params = {
@@ -251,6 +250,153 @@ class Agent:
         }
         
         return params
+    
+    def _generate_metadata_params_with_llm(self, question: str) -> Dict[str, Any]:
+        """Use LLM to generate structured metadata command parameters.
+        
+        Args:
+            question: Natural language question
+            
+        Returns:
+            Dictionary of structured parameters for MetadataCommandsPlugin
+        """
+        try:
+            from openai import OpenAI
+            from config.config import get_settings
+            
+            settings = get_settings()
+            if not settings.openai_api_key:
+                self._reasoning_trace.append("No OpenAI API key - using fallback parsing")
+                return self._fallback_metadata_params(question)
+            
+            # Initialize OpenAI client
+            client = OpenAI(api_key=settings.openai_api_key)
+            
+            # Create a prompt for the LLM to understand the query and generate structured parameters
+            prompt = f"""You are a document metadata query parser. Parse the user's natural language question and convert it to structured parameters for a metadata plugin.
+
+Available operations:
+- get_latest_files: Get most recently modified files
+- find_files_by_type: Find files by type (PDF, DOCX, PPTX, XLSX, MSG, TXT)
+- get_file_stats: Get statistics about files
+- search_content: Search within file content
+
+Available file types: PDF, DOCX, PPTX, XLSX, MSG, TXT
+
+Available time filters: recent, last_week, last_month, yesterday, today
+
+User question: "{question}"
+
+Response must be valid JSON in this exact format:
+{{
+    "operation": "operation_name",
+    "file_type": "TYPE or null",
+    "count": number_or_null,
+    "time_filter": "filter_or_null",
+    "keywords": ["keyword1", "keyword2"] or null
+}}
+
+Examples:
+"list all pdf files" -> {{"operation": "find_files_by_type", "file_type": "PDF", "count": null, "time_filter": null, "keywords": null}}
+"show me 5 latest emails" -> {{"operation": "get_latest_files", "file_type": "MSG", "count": 5, "time_filter": "recent", "keywords": null}}
+"how many documents from last week" -> {{"operation": "get_file_stats", "file_type": null, "count": null, "time_filter": "last_week", "keywords": null}}
+
+Respond with only the JSON, no other text:"""
+
+            # Get response from LLM
+            response = client.chat.completions.create(
+                model='gpt-4o-mini',
+                messages=[{'role': 'user', 'content': prompt}],
+                max_tokens=200,
+                temperature=0.1  # Low temperature for consistent parsing
+            )
+            
+            # Parse the JSON response
+            import json
+            params_text = response.choices[0].message.content
+            if params_text is None:
+                self._reasoning_trace.append("LLM returned empty response")
+                return self._fallback_metadata_params(question)
+            
+            params_text = params_text.strip()
+            
+            # Clean up the response if needed
+            if params_text.startswith('```json'):
+                params_text = params_text.replace('```json', '').replace('```', '').strip()
+            
+            params = json.loads(params_text)
+            
+            # Validate the parsed parameters
+            required_keys = ['operation']
+            for key in required_keys:
+                if key not in params:
+                    self._reasoning_trace.append(f"LLM parsing missing required key: {key}")
+                    return self._fallback_metadata_params(question)
+            
+            self._reasoning_trace.append(f"LLM parsed query to operation: {params.get('operation')}")
+            return params
+            
+        except Exception as e:
+            self._reasoning_trace.append(f"LLM parsing failed: {e}")
+            return self._fallback_metadata_params(question)
+    
+    def _fallback_metadata_params(self, question: str) -> Dict[str, Any]:
+        """Fallback parameter generation using simple keyword matching.
+        
+        Args:
+            question: Natural language question
+            
+        Returns:
+            Dictionary of basic parameters
+        """
+        question_lower = question.lower()
+        
+        # Simple operation detection
+        if any(word in question_lower for word in ['latest', 'recent', 'newest']):
+            operation = 'get_latest_files'
+        elif any(word in question_lower for word in ['how many', 'count', 'number']):
+            operation = 'get_file_stats'
+        elif any(word in question_lower for word in ['list', 'show', 'find']):
+            operation = 'find_files_by_type'
+        else:
+            operation = 'search_content'
+        
+        # Simple file type detection
+        file_type = None
+        if any(word in question_lower for word in ['email', 'mail', 'msg']):
+            file_type = 'MSG'
+        elif any(word in question_lower for word in ['pdf']):
+            file_type = 'PDF'
+        elif any(word in question_lower for word in ['doc', 'docx', 'document']):
+            file_type = 'DOCX'
+        elif any(word in question_lower for word in ['ppt', 'pptx', 'presentation']):
+            file_type = 'PPTX'
+        elif any(word in question_lower for word in ['xls', 'xlsx', 'spreadsheet']):
+            file_type = 'XLSX'
+        
+        # Simple count detection
+        count = None
+        import re
+        count_match = re.search(r'\b(\d+)\b', question)
+        if count_match:
+            count = int(count_match.group(1))
+        
+        # Simple time filter detection
+        time_filter = None
+        if 'last week' in question_lower:
+            time_filter = 'last_week'
+        elif 'last month' in question_lower:
+            time_filter = 'last_month'
+        elif any(word in question_lower for word in ['recent', 'latest']):
+            time_filter = 'recent'
+        
+        return {
+            'operation': operation,
+            'file_type': file_type,
+            'count': count,
+            'time_filter': time_filter,
+            'keywords': None
+        }
     
     def _synthesize_response(self, question: str, results: List[tuple]) -> str:
         """Enhanced response synthesis with multi-step query support.
