@@ -22,6 +22,10 @@ from config.config import get_settings
 
 logger = logging.getLogger(__name__)
 
+# Specialized logger for SQL queries
+sql_logger = logging.getLogger('sql.query')
+plugin_logger = logging.getLogger('plugin.metadata')
+
 
 class SortBy(Enum):
     """Supported sort criteria."""
@@ -466,8 +470,20 @@ class MetadataCommandsPlugin(Plugin):
             query_params.append(count)
         
         # Execute query
+        plugin_logger.info(f"Operation: {params.get('operation', 'find_files')}")
+        plugin_logger.info(f"Parameters: file_type={file_type}, count={count}, time_filter={time_filter}")
+        
+        # Log the SQL query for debug level
+        sql_logger.debug("", extra={
+            'sql_query': query,
+            'sql_params': query_params,
+            'msg': f"Executing query with {len(query_params)} parameters"
+        })
+        
         cursor.execute(query, query_params)
         results = cursor.fetchall()
+        
+        plugin_logger.info(f"Found {len(results)} files matching criteria")
         
         if not results:
             return {

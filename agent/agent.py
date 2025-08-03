@@ -9,6 +9,12 @@ from .plugin import Plugin
 
 logger = logging.getLogger(__name__)
 
+# Specialized loggers for verbose output
+classification_logger = logging.getLogger('agent.classification')
+execution_logger = logging.getLogger('agent.execution')
+synthesis_logger = logging.getLogger('agent.synthesis')
+timing_logger = logging.getLogger('timing')
+
 
 class Agent:
     """Core agent for intelligent document analysis.
@@ -45,10 +51,14 @@ class Agent:
         
         try:
             # Classify query and determine appropriate plugins
+            classification_logger.info(f"Agent classification: analyzing query type")
             plugins_to_use = self._classify_query(question)
             
             if not plugins_to_use:
+                classification_logger.info("No suitable plugins found for query")
                 return "No relevant information found."
+            
+            classification_logger.info(f"Selected plugins: {', '.join(plugins_to_use)}")
             
             # Execute plugins and collect results
             results = []
@@ -56,6 +66,7 @@ class Agent:
                 plugin = self.registry.get_plugin(plugin_name)
                 if plugin:
                     try:
+                        execution_logger.info(f"Executing plugin: {plugin_name}")
                         self._reasoning_trace.append(f"Executing plugin: {plugin_name}")
                         params = self._prepare_params(plugin_name, question)
                         
@@ -63,16 +74,21 @@ class Agent:
                             result = plugin.execute(params)
                             results.append((plugin_name, result))
                             self._last_plugins_used.append(plugin_name)
+                            execution_logger.info(f"Plugin {plugin_name} completed successfully")
                         else:
                             logger.warning(f"Invalid parameters for plugin {plugin_name}")
+                            execution_logger.info(f"Plugin {plugin_name} failed: invalid parameters")
                     except Exception as e:
                         logger.error(f"Error executing plugin {plugin_name}: {e}")
+                        execution_logger.info(f"Plugin {plugin_name} failed: {e}")
                         self._reasoning_trace.append(f"Plugin {plugin_name} failed: {e}")
             
             # Synthesize final response
+            synthesis_logger.info(f"Synthesizing response from {len(results)} plugin results")
             response = self._synthesize_response(question, results)
             
             self._last_execution_time = time.time() - start_time
+            timing_logger.info(f"Total execution time: {self._last_execution_time:.2f}s")
             return response
             
         except Exception as e:
@@ -161,24 +177,30 @@ class Agent:
         
         is_multi_step = any(re.search(pattern, question_lower) for pattern in multi_step_patterns)
         
+        # Log classification analysis
+        classification_logger.debug(f"Query analysis - email indicators: {has_email_indicators}, metadata indicators: {has_metadata_indicators}, multi-step: {is_multi_step}")
+        
         # Enhanced classification logic
         if has_email_indicators and has_metadata_indicators:
             # Queries like "emails from John last week" - primarily metadata
             if self.registry.get_plugin("metadata_commands"):
                 plugins_to_use.append("metadata_commands")
                 self._reasoning_trace.append("Detected email metadata query")
+                classification_logger.info("Classified as email metadata query")
         
         elif has_email_indicators:
             # Pure email queries - route to metadata commands for enhanced processing
             if self.registry.get_plugin("metadata_commands"):
                 plugins_to_use.append("metadata_commands")
                 self._reasoning_trace.append("Detected email-specific query")
+                classification_logger.info("Classified as email-specific query")
         
         elif has_metadata_indicators:
             # Pure metadata queries - prefer enhanced metadata commands
             if self.registry.get_plugin("metadata_commands"):
                 plugins_to_use.append("metadata_commands")
                 self._reasoning_trace.append("Detected metadata query keywords")
+                classification_logger.info("Classified as metadata query")
         
         # Check for semantic search queries
         content_keywords = [
@@ -199,6 +221,7 @@ class Agent:
             if "semantic_search" not in plugins_to_use:
                 plugins_to_use.append("semantic_search")
                 self._reasoning_trace.append("Using semantic search for content analysis")
+                classification_logger.info("Added semantic search for content analysis")
         
         # Special handling for complex queries that benefit from both plugins
         complex_patterns = [
@@ -215,7 +238,9 @@ class Agent:
                 if self.registry.get_plugin(plugin_name) and plugin_name not in plugins_to_use:
                     plugins_to_use.append(plugin_name)
                     self._reasoning_trace.append(f"Added {plugin_name} for complex query")
+                    classification_logger.info(f"Added {plugin_name} for complex query analysis")
         
+        classification_logger.info(f"Final plugin selection: {plugins_to_use}")
         return plugins_to_use
     
     def _prepare_params(self, plugin_name: str, question: str) -> Dict[str, Any]:
@@ -250,6 +275,8 @@ class Agent:
         Returns:
             Dictionary of structured parameters for MetadataCommandsPlugin
         """
+        llm_logger = logging.getLogger('llm.generation')
+        
         try:
             from openai import OpenAI
             from config.config import get_settings
@@ -257,6 +284,7 @@ class Agent:
             settings = get_settings()
             if not settings.openai_api_key:
                 self._reasoning_trace.append("No OpenAI API key - using fallback parsing")
+                llm_logger.info("No OpenAI API key - using fallback parsing")
                 return self._fallback_metadata_params(question)
             
             # Initialize OpenAI client
@@ -295,7 +323,10 @@ Examples:
 
 Respond with only the JSON, no other text:"""
 
+            llm_logger.debug(f"LLM prompt: {prompt[:100]}...")
+            
             # Get response from LLM
+            llm_logger.info("LLM parsing with GPT-4o-mini...")
             response = client.chat.completions.create(
                 model='gpt-4o-mini',
                 messages=[{'role': 'user', 'content': prompt}],
@@ -308,9 +339,11 @@ Respond with only the JSON, no other text:"""
             params_text = response.choices[0].message.content
             if params_text is None:
                 self._reasoning_trace.append("LLM returned empty response")
+                llm_logger.info("LLM returned empty response")
                 return self._fallback_metadata_params(question)
             
             params_text = params_text.strip()
+            llm_logger.debug(f"LLM response: {params_text}")
             
             # Clean up the response if needed
             if params_text.startswith('```json'):
@@ -323,13 +356,24 @@ Respond with only the JSON, no other text:"""
             for key in required_keys:
                 if key not in params:
                     self._reasoning_trace.append(f"LLM parsing missing required key: {key}")
+                    llm_logger.info(f"LLM parsing missing required key: {key}")
                     return self._fallback_metadata_params(question)
             
             self._reasoning_trace.append(f"LLM parsed query to operation: {params.get('operation')}")
+            llm_logger.info(f"LLM parsed query to operation: {params.get('operation')}")
+            
+            # Create detailed log entry for debug level
+            llm_logger.debug("", extra={
+                'llm_model': 'GPT-4o-mini',
+                'llm_prompt': prompt[:200],
+                'msg': f"Response: {params_text}"
+            })
+            
             return params
             
         except Exception as e:
             self._reasoning_trace.append(f"LLM parsing failed: {e}")
+            llm_logger.info(f"LLM parsing failed: {e}")
             return self._fallback_metadata_params(question)
     
     def _fallback_metadata_params(self, question: str) -> Dict[str, Any]:

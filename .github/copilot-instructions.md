@@ -46,6 +46,13 @@ The goal of this repo is to build **DocQuest** - a local RAG pipeline that quest
 * **API (`api/app.py`)**  
   * FastAPI endpoints should integrate with the agent framework.  
   * Maintain RESTful design patterns and proper error handling.
+* **Logging (`cli/ask.py`, `agent/`, etc.)**  
+  * Use contextual loggers with descriptive names (e.g., `agent.classification`, `plugin.metadata`, `sql.query`, `llm.generation`).  
+  * Support verbose logging levels: 0=minimal, 1=info, 2=debug, 3=trace.  
+  * Use custom formatters with emoji mapping for different log contexts.  
+  * Add special formatting for SQL queries (`sql_query`, `sql_params` attributes) and LLM interactions (`llm_prompt`, `llm_model` attributes).  
+  * Ensure logging doesn't modify core business logic or function signatures.  
+  * Test logging functionality with comprehensive test coverage.
 
 ---
 
