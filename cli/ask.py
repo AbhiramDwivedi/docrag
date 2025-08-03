@@ -27,18 +27,15 @@ class VerboseFormatter(logging.Formatter):
         # Get emoji for logger name
         emoji = self.EMOJI_MAP.get(record.name, '📝')
         
-        # Add indentation based on level
-        if record.levelno >= logging.DEBUG:
-            indent = '   '  # Debug level gets indentation
-        else:
-            indent = ''
+        # Base indentation is none for top-level messages
+        indent = ''
         
         # Format message with emoji and indentation
         if hasattr(record, 'sql_query'):
-            # Special formatting for SQL queries
-            return f"{indent}{emoji} SQL Query: {record.getMessage()}\n{indent}   Parameters: {record.sql_params}"
+            # Special formatting for SQL queries with sub-indentation for parameters
+            return f"{indent}{emoji} SQL Query: {record.sql_query}\n{indent}   Parameters: {record.sql_params}"
         elif hasattr(record, 'llm_prompt'):
-            # Special formatting for LLM interactions
+            # Special formatting for LLM interactions with sub-indentation for details
             return f"{indent}{emoji} LLM {record.llm_model}...\n{indent}   Prompt: \"{record.llm_prompt[:100]}...\"\n{indent}   Response: {record.getMessage()}"
         else:
             return f"{indent}{emoji} {record.getMessage()}"
@@ -63,9 +60,13 @@ def setup_logging(verbose_level: int = 0):
     Args:
         verbose_level: 0=minimal, 1=info, 2=debug, 3=trace
     """
+    # Clear existing handlers to ensure clean setup
+    for handler in logging.root.handlers[:]:
+        logging.root.removeHandler(handler)
+    
     if verbose_level == 0:
         # Minimal logging - only errors
-        logging.basicConfig(level=logging.ERROR, format='%(message)s')
+        logging.basicConfig(level=logging.ERROR, format='%(message)s', force=True)
         return
     
     # Set logging levels based on verbose level
@@ -80,7 +81,8 @@ def setup_logging(verbose_level: int = 0):
     logging.basicConfig(
         level=level,
         format='%(message)s',
-        handlers=[logging.StreamHandler(sys.stdout)]
+        handlers=[logging.StreamHandler(sys.stdout)],
+        force=True
     )
     
     # Set custom formatter for our loggers
@@ -138,7 +140,8 @@ def answer(question: str, verbose_level: int = 0) -> str:
         # Log timing information for trace level
         if verbose_level >= 3 and hasattr(agent, '_last_execution_time'):
             timing_logger = logging.getLogger('timing')
-            timing_logger.info(f"Query completed (execution: {agent._last_execution_time:.2f}s)")
+            execution_time = agent._last_execution_time
+            timing_logger.info(f"Query completed (execution: {execution_time:.2f}s)")
         
         return result
     except Exception as e:
