@@ -39,3 +39,4 @@ config.yaml
 check_db.py
 check_schema.py
 test_*.py
+!tests/test_*.py
