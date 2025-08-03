@@ -488,3 +488,17 @@ class EnhancedVectorStore(VectorStore):
             '.md': 'MARKDOWN'
         }
         return type_mapping.get(extension.lower(), 'OTHER')
+
+    @classmethod
+    def load(cls, index_path: Path, db_path: Path, dim: int = 384):
+        """Load an existing enhanced vector store from files.
+        
+        Args:
+            index_path: Path to FAISS index file
+            db_path: Path to SQLite database file
+            dim: Vector dimension (default 384 for sentence-transformers)
+            
+        Returns:
+            EnhancedVectorStore instance
+        """
+        return cls(index_path, db_path, dim)

@@ -13,6 +13,23 @@ class VectorStore:
         self._load_index()
         self._init_db()
 
+    @classmethod
+    def load(cls, index_path: Path, db_path: Path = None, dim: int = 384):
+        """Load an existing vector store from files.
+        
+        Args:
+            index_path: Path to FAISS index file
+            db_path: Path to SQLite database file (derived from index_path if None)
+            dim: Vector dimension (default 384 for sentence-transformers)
+            
+        Returns:
+            VectorStore instance
+        """
+        if db_path is None:
+            db_path = index_path.with_suffix('.db')
+        
+        return cls(index_path, db_path, dim)
+
     def _load_index(self):
         if self.index_path.exists():
             self.index = faiss.read_index(str(self.index_path))

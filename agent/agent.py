@@ -132,7 +132,7 @@ class Agent:
         return "\n".join(explanation)
     
     def _classify_query(self, question: str) -> List[str]:
-        """Enhanced query classification with multi-step planning support.
+        """Enhanced query classification with Phase III multi-step planning support.
         
         Args:
             question: User question to classify
@@ -159,6 +159,21 @@ class Agent:
             "pdf", "pptx", "docx", "xlsx", "msg", "txt"
         ]
         
+        # Phase III relationship analysis keywords
+        relationship_keywords = [
+            "similar", "related", "relationship", "connection", "linked",
+            "cross-reference", "references", "mentions", "clusters", "groups",
+            "theme", "themes", "patterns", "evolution", "changes over time",
+            "citations", "network", "graph"
+        ]
+        
+        # Phase III reporting keywords
+        reporting_keywords = [
+            "report", "summary", "analysis", "overview", "statistics", "stats",
+            "trends", "insights", "dashboard", "metrics", "analytics",
+            "health", "quality", "performance", "usage", "activity"
+        ]
+        
         # Check for email-specific queries using word boundaries
         has_email_indicators = any(re.search(r'\b' + re.escape(keyword) + r'\b', question_lower) 
                                   for keyword in email_indicators)
@@ -166,21 +181,44 @@ class Agent:
         # Check for metadata queries
         has_metadata_indicators = any(keyword in question_lower for keyword in metadata_keywords)
         
-        # Multi-step query detection - queries that might need both plugins
+        # Check for relationship analysis queries
+        has_relationship_indicators = any(keyword in question_lower for keyword in relationship_keywords)
+        
+        # Check for reporting queries
+        has_reporting_indicators = any(keyword in question_lower for keyword in reporting_keywords)
+        
+        # Multi-step query detection - queries that might need multiple plugins
         multi_step_patterns = [
             "latest email about",
             "recent email regarding", 
             "emails about .* and related files",
             "find .* and show",
-            "emails .* plus"
+            "emails .* plus",
+            "analyze .* and report",
+            "summarize .* relationships",
+            "report on .* activity"
         ]
         
         is_multi_step = any(re.search(pattern, question_lower) for pattern in multi_step_patterns)
         
         # Log classification analysis
-        classification_logger.debug(f"Query analysis - email indicators: {has_email_indicators}, metadata indicators: {has_metadata_indicators}, multi-step: {is_multi_step}")
+        classification_logger.debug(f"Query analysis - email: {has_email_indicators}, metadata: {has_metadata_indicators}, relationships: {has_relationship_indicators}, reporting: {has_reporting_indicators}, multi-step: {is_multi_step}")
         
-        # Enhanced classification logic
+        # Phase III enhanced classification logic
+        if has_reporting_indicators:
+            # Queries asking for reports, summaries, or analytics
+            if self.registry.get_plugin("comprehensive_reporting"):
+                plugins_to_use.append("comprehensive_reporting")
+                self._reasoning_trace.append("Detected reporting/analytics query")
+                classification_logger.info("Classified as reporting query")
+        
+        if has_relationship_indicators:
+            # Queries asking about document relationships, similarities, or patterns
+            if self.registry.get_plugin("document_relationships"):
+                plugins_to_use.append("document_relationships")
+                self._reasoning_trace.append("Detected relationship analysis query")
+                classification_logger.info("Classified as relationship analysis query")
+        
         if has_email_indicators and has_metadata_indicators:
             # Queries like "emails from John last week" - primarily metadata
             if self.registry.get_plugin("metadata_commands"):
@@ -212,8 +250,8 @@ class Agent:
         is_content_query = (
             any(keyword in question_lower for keyword in content_keywords) or
             (not plugins_to_use and not any(word in question_lower for word in [
-                "files", "documents", "count", "list", "show", "how many", "types", "email"
-            ]))  # Default to semantic search if no clear metadata/email indicators
+                "files", "documents", "count", "list", "show", "how many", "types", "email", "report", "summary"
+            ]))  # Default to semantic search if no clear indicators
         )
         
         # Add semantic search for content queries or multi-step queries
@@ -223,28 +261,37 @@ class Agent:
                 self._reasoning_trace.append("Using semantic search for content analysis")
                 classification_logger.info("Added semantic search for content analysis")
         
-        # Special handling for complex queries that benefit from both plugins
+        # Special handling for complex queries that benefit from multiple plugins
         complex_patterns = [
             "about .* files",  # "about budget files" - content + metadata
             "documents .* recent",  # "documents about X recent" - content + time filter
-            "find .* and list"  # "find X and list files" - content + metadata
+            "find .* and list",  # "find X and list files" - content + metadata
+            "analyze .* and summarize",  # "analyze X and summarize" - relationships + reporting
+            "report on .* relationships",  # reporting + relationships
+            "trends in .* documents"  # reporting + relationships + content
         ]
         
         is_complex = any(re.search(pattern, question_lower) for pattern in complex_patterns)
         
         if is_complex:
-            # Add both plugins for complex queries
-            for plugin_name in ["metadata_commands", "semantic_search"]:
+            # Add complementary plugins for complex queries
+            for plugin_name in ["metadata_commands", "semantic_search", "document_relationships"]:
                 if self.registry.get_plugin(plugin_name) and plugin_name not in plugins_to_use:
                     plugins_to_use.append(plugin_name)
                     self._reasoning_trace.append(f"Added {plugin_name} for complex query")
                     classification_logger.info(f"Added {plugin_name} for complex query analysis")
         
+        # If no plugins selected, default to semantic search
+        if not plugins_to_use and self.registry.get_plugin("semantic_search"):
+            plugins_to_use.append("semantic_search")
+            self._reasoning_trace.append("Defaulting to semantic search")
+            classification_logger.info("No specific indicators found - defaulting to semantic search")
+        
         classification_logger.info(f"Final plugin selection: {plugins_to_use}")
         return plugins_to_use
     
     def _prepare_params(self, plugin_name: str, question: str) -> Dict[str, Any]:
-        """Prepare parameters for plugin execution.
+        """Prepare parameters for plugin execution with Phase III enhancements.
         
         Args:
             plugin_name: Name of the plugin to prepare parameters for
@@ -258,11 +305,136 @@ class Agent:
             # Use LLM to generate structured metadata commands
             return self._generate_metadata_params_with_llm(question)
         
+        elif plugin_name == "document_relationships":
+            # Generate parameters for relationship analysis
+            return self._generate_relationship_params(question)
+        
+        elif plugin_name == "comprehensive_reporting":
+            # Generate parameters for reporting
+            return self._generate_reporting_params(question)
+        
         # Basic parameters for other plugins
         params = {
             "question": question,
             "query": question,  # Alias for compatibility
         }
+        
+        return params
+    
+    def _generate_relationship_params(self, question: str) -> Dict[str, Any]:
+        """Generate parameters for document relationship analysis.
+        
+        Args:
+            question: Natural language question
+            
+        Returns:
+            Dictionary of parameters for DocumentRelationshipPlugin
+        """
+        question_lower = question.lower()
+        
+        # Determine the operation type based on question
+        if any(word in question_lower for word in ["similar", "related", "like"]):
+            operation = "find_similar_documents"
+        elif any(word in question_lower for word in ["cluster", "group", "categorize"]):
+            operation = "cluster_documents"
+        elif any(word in question_lower for word in ["reference", "citation", "mention"]):
+            operation = "detect_cross_references"
+        elif any(word in question_lower for word in ["theme", "topic", "subject"]):
+            operation = "analyze_themes"
+        elif any(word in question_lower for word in ["evolution", "change", "history"]):
+            operation = "track_content_evolution"
+        elif any(word in question_lower for word in ["cite", "citation"]):
+            operation = "find_citations"
+        else:
+            operation = "analyze_relationships"  # Comprehensive analysis
+        
+        # Extract additional parameters
+        params = {
+            "operation": operation,
+            "query": question
+        }
+        
+        # Add specific parameters based on operation
+        if operation == "find_similar_documents":
+            # Look for document path or use query
+            params["query_text"] = question
+            params["threshold"] = 0.7
+            params["max_results"] = 10
+        
+        elif operation == "cluster_documents":
+            # Extract number of clusters if mentioned
+            import re
+            cluster_match = re.search(r'(\d+)\s*cluster', question_lower)
+            params["num_clusters"] = int(cluster_match.group(1)) if cluster_match else 5
+        
+        elif operation == "track_content_evolution":
+            # Extract time window
+            if "week" in question_lower:
+                params["time_window"] = "1_week"
+            elif "month" in question_lower:
+                params["time_window"] = "1_month"
+            else:
+                params["time_window"] = "3_months"
+        
+        return params
+    
+    def _generate_reporting_params(self, question: str) -> Dict[str, Any]:
+        """Generate parameters for comprehensive reporting.
+        
+        Args:
+            question: Natural language question
+            
+        Returns:
+            Dictionary of parameters for ComprehensiveReportingPlugin
+        """
+        question_lower = question.lower()
+        
+        # Determine the report type based on question
+        if any(word in question_lower for word in ["summary", "overview", "collection"]):
+            operation = "generate_collection_summary"
+        elif any(word in question_lower for word in ["theme", "topic", "subject", "thematic"]):
+            operation = "generate_thematic_analysis"
+        elif any(word in question_lower for word in ["activity", "recent", "changes", "new"]):
+            operation = "generate_activity_report"
+        elif any(word in question_lower for word in ["insight", "connection", "relationship"]):
+            operation = "generate_insights_report"
+        elif any(word in question_lower for word in ["trend", "pattern", "evolution"]):
+            operation = "generate_trend_analysis"
+        elif any(word in question_lower for word in ["usage", "analytics", "performance"]):
+            operation = "generate_usage_analytics"
+        elif any(word in question_lower for word in ["health", "quality", "status"]):
+            operation = "generate_health_report"
+        elif any(word in question_lower for word in ["custom", "specific"]):
+            operation = "generate_custom_report"
+        else:
+            operation = "generate_collection_summary"  # Default
+        
+        # Base parameters
+        params = {
+            "operation": operation,
+            "query": question
+        }
+        
+        # Add specific parameters based on operation
+        if operation == "generate_activity_report":
+            # Extract time window
+            if "day" in question_lower or "daily" in question_lower:
+                params["time_window"] = "1_day"
+            elif "week" in question_lower or "weekly" in question_lower:
+                params["time_window"] = "1_week"
+            elif "month" in question_lower or "monthly" in question_lower:
+                params["time_window"] = "1_month"
+            else:
+                params["time_window"] = "1_week"  # Default
+        
+        elif operation == "generate_trend_analysis":
+            # Set time periods for trend analysis
+            params["time_periods"] = ["1_week", "1_month", "3_months"]
+        
+        elif operation == "generate_custom_report":
+            # Extract any specific criteria mentioned
+            params["criteria"] = {"query": question}
+            params["title"] = "Custom Analysis Report"
         
         return params
     
