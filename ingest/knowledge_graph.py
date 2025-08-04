@@ -534,12 +534,36 @@ class KnowledgeGraph:
                 'total_entities': self.graph.number_of_nodes(),
                 'total_relationships': self.graph.number_of_edges(),
                 'entity_types': {},
-                'relationship_types': {},
-                'is_connected': nx.is_connected(self.graph.to_undirected()),
-                'number_of_components': nx.number_connected_components(self.graph.to_undirected()),
-                'average_clustering': nx.average_clustering(self.graph.to_undirected()),
-                'density': nx.density(self.graph)
+                'relationship_types': {}
             }
+            
+            # Add network analysis stats that work with multigraphs
+            if self.graph.number_of_nodes() > 0:
+                undirected = self.graph.to_undirected()
+                # Convert to simple graph for some calculations
+                simple_graph = nx.Graph(undirected)
+                
+                stats.update({
+                    'is_connected': nx.is_connected(simple_graph) if simple_graph.number_of_nodes() > 0 else True,
+                    'number_of_components': nx.number_connected_components(simple_graph),
+                    'density': nx.density(simple_graph)
+                })
+                
+                # Only calculate clustering if we have nodes
+                if simple_graph.number_of_nodes() > 0:
+                    try:
+                        stats['average_clustering'] = nx.average_clustering(simple_graph)
+                    except:
+                        stats['average_clustering'] = 0.0
+                else:
+                    stats['average_clustering'] = 0.0
+            else:
+                stats.update({
+                    'is_connected': True,
+                    'number_of_components': 0,
+                    'density': 0.0,
+                    'average_clustering': 0.0
+                })
             
             # Count entity types
             for node_id in self.graph.nodes():

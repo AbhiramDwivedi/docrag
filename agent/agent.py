@@ -364,7 +364,9 @@ class Agent:
         elif operation == "cluster_documents":
             # Extract number of clusters if mentioned
             import re
-            cluster_match = re.search(r'(\d+)\s*cluster', question_lower)
+            # Look for patterns like "3 clusters", "into 3 groups", "cluster into 3"
+            cluster_match = re.search(r'(?:into\s+)?(\d+)\s*(?:cluster|group)', question_lower) or \
+                           re.search(r'(\d+)\s*cluster', question_lower)
             params["num_clusters"] = int(cluster_match.group(1)) if cluster_match else 5
         
         elif operation == "track_content_evolution":
