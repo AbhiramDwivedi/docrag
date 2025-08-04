@@ -316,6 +316,9 @@ class MetadataCommandsPlugin(Plugin):
         sender_email = params.get("sender_email")
         subject_contains = params.get("subject_contains")
         
+        # Time filtering
+        time_filter = params.get("time_filter")
+        
         # Output control
         count = params.get("count", 50)
         if count == -1:
