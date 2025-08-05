@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from api.app import app
+from backend.querying.api import app
 
 
 class TestAPIIntegration:

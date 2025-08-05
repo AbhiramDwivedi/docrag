@@ -1,0 +1,1 @@
+"""Backward compatibility for CLI module."""

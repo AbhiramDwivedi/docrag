@@ -56,7 +56,7 @@ class TestCLIIntegration:
     def test_cli_module_content_query(self):
         """Test CLI module with content query via subprocess."""
         result = subprocess.run(
-            [sys.executable, "-m", "cli.ask", "what is PCI compliance?"],
+            [sys.executable, "-m", "interface.cli.ask", "what is PCI compliance?"],
             cwd=Path(__file__).parent.parent,
             capture_output=True,
             text=True
