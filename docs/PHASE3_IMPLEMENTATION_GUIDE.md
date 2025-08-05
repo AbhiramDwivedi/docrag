@@ -159,7 +159,7 @@ data/
 Additional dependencies for Phase III:
 - `networkx`: Graph analysis and algorithms
 - `numpy`: Numerical operations for embeddings
-- Enhanced vector store support
+- Vector store support
 
 ### Memory and Performance
 

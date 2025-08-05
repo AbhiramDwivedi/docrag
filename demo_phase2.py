@@ -87,9 +87,9 @@ def demo_metadata_plugin_capabilities():
             rprint(f"   Parameters: {params}")
 
 
-def demo_enhanced_vector_store():
-    """Demonstrate enhanced vector store schema."""
-    rprint("\n💾 [bold]Enhanced Vector Store Schema[/bold]")
+def demo_vector_store():
+    """Demonstrate vector store schema."""
+    rprint("\n💾 [bold]Vector Store Schema[/bold]")
     
     from ingest.enhanced_vector_store import EnhancedVectorStore
     import tempfile
@@ -187,7 +187,7 @@ def main():
     try:
         demo_query_classification()
         demo_metadata_plugin_capabilities()
-        demo_enhanced_vector_store()
+        demo_vector_store()
         demo_migration_capabilities()
         demo_example_use_cases()
         

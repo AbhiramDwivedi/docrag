@@ -130,16 +130,16 @@ class DocumentRelationshipPlugin(Plugin):
         """Get or initialize the vector store."""
         if self._vector_store is None:
             try:
-                # Try enhanced vector store first
+                # Initialize vector store
                 if Path(self.db_path).exists():
                     self._vector_store = EnhancedVectorStore.load(
                         Path(self.vector_store_path), 
                         Path(self.db_path)
                     )
                 else:
-                    # Fallback to basic vector store
+                    # Fallback to basic vector store if database doesn't exist
                     self._vector_store = VectorStore.load(Path(self.vector_store_path))
-                    logger.warning("Using basic vector store - enhanced features unavailable")
+                    logger.warning("Using basic vector store - metadata features unavailable")
             except Exception as e:
                 logger.error(f"Failed to load vector store: {e}")
                 raise
