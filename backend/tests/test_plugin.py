@@ -1,61 +1,63 @@
+"""Tests for metadata commands plugin."""
+
+import pytest
 import sys
 import os
+import tempfile
+import sqlite3
+from pathlib import Path
+from unittest.mock import Mock, patch
 
 # Add the project root to the path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from docquest.querying.agents.plugins.metadata_commands import MetadataCommandsPlugin
-import sqlite3
 
-# Test the exact parameters that would be generated
-plugin = MetadataCommandsPlugin()
 
-# Test 1: MSG files (should work)
-print("=== Test 1: MSG Files ===")
-params1 = {
-    "operation": "get_latest_files",
-    "file_type": "MSG",
-    "count": 10
-}
-
-conn = sqlite3.connect('data/docmeta.db')
-try:
-    result1 = plugin._get_latest_files(params1, conn)
-    print(f"Result: {result1['response']}")
-    print(f"Count: {result1['metadata']['count']}")
-finally:
-    conn.close()
-
-# Test 2: PPT files (should fail because no PPT files exist)
-print("\n=== Test 2: PPT Files ===")
-params2 = {
-    "operation": "get_latest_files",
-    "file_type": "PPT",
-    "count": 5,
-    "time_filter": "recent"
-}
-
-conn = sqlite3.connect('data/docmeta.db')
-try:
-    result2 = plugin._get_latest_files(params2, conn)
-    print(f"Result: {result2['response']}")
-    print(f"Count: {result2['metadata']['count']}")
-finally:
-    conn.close()
-
-# Test 3: PPTX files (should work)
-print("\n=== Test 3: PPTX Files ===")
-params3 = {
-    "operation": "get_latest_files",
-    "file_type": "PPTX",
-    "count": 5,
-    "time_filter": "recent"
-}
-
-conn = sqlite3.connect('data/docmeta.db')
-try:
-    result3 = plugin._get_latest_files(params3, conn)
-    print(f"Result: {result3['response']}")
-    print(f"Count: {result3['metadata']['count']}")
-finally:
-    conn.close()
+class TestMetadataCommandsPlugin:
+    """Test the MetadataCommandsPlugin functionality."""
+    
+    def test_plugin_initialization(self):
+        """Test that the plugin can be initialized."""
+        plugin = MetadataCommandsPlugin()
+        assert plugin is not None
+        
+        info = plugin.get_info()
+        assert info.name == "metadata_commands"
+        assert "find_files" in info.capabilities
+    
+    @patch('docquest.querying.agents.plugins.metadata_commands.sqlite3')
+    def test_get_latest_files_with_mock_db(self, mock_sqlite):
+        """Test get_latest_files with a mocked database."""
+        # Setup mock
+        mock_conn = Mock()
+        mock_cursor = Mock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_cursor.fetchall.return_value = [
+            ('test.msg', '/path/to/test.msg', 1024, '2023-01-01', 'MSG')
+        ]
+        
+        plugin = MetadataCommandsPlugin()
+        params = {
+            "operation": "get_latest_files",
+            "file_type": "MSG",
+            "count": 10
+        }
+        
+        result = plugin._get_latest_files(params, mock_conn)
+        
+        assert "response" in result
+        assert "metadata" in result
+        assert result["metadata"]["count"] == 1
+    
+    def test_validate_params_requires_operation(self):
+        """Test that validate_params requires operation parameter."""
+        plugin = MetadataCommandsPlugin()
+        
+        # Missing operation should fail
+        assert plugin.validate_params({}) is False
+        assert plugin.validate_params({"file_type": "PDF"}) is False
+        
+        # With operation should pass
+        assert plugin.validate_params({"operation": "find_files"}) is True

@@ -277,7 +277,7 @@ class TestMetadataCommandsPlugin:
         mock_path.return_value = mock_db_path
         
         plugin = MetadataCommandsPlugin()
-        result = plugin.execute({"question": "how many files"})
+        result = plugin.execute({"operation": "find_files", "question": "how many files"})
         
         assert result["metadata"]["error"] == "no_database"
         assert "No document database found" in result["response"]
