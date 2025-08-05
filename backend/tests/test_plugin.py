@@ -35,10 +35,14 @@ class TestMetadataCommandsPlugin:
         mock_cursor = Mock()
         mock_conn.cursor.return_value = mock_cursor
         mock_cursor.fetchall.return_value = [
-            ('test.msg', '/path/to/test.msg', 1024, '2023-01-01', 'MSG')
+            ('test.msg', '/path/to/test.msg', 1024, 1672531200, 'MSG')  # Unix timestamp for 2023-01-01
         ]
         
         plugin = MetadataCommandsPlugin()
+        
+        # Mock the enhanced schema check to return True
+        plugin._has_enhanced_schema = Mock(return_value=True)
+        
         params = {
             "operation": "get_latest_files",
             "file_type": "MSG",

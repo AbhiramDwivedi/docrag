@@ -137,7 +137,7 @@ class TestEndToEnd:
         capabilities = agent.get_capabilities()
         expected_capabilities = [
             "semantic_search", "document_query", "content_analysis", "vector_search",
-            "find_files", "file_statistics", "collection_analysis", "file_counts", "file_types"
+            "find_files", "get_latest_files", "find_files_by_content", "get_file_stats", "get_file_count", "get_file_types"
         ]
         
         for capability in expected_capabilities:
@@ -236,16 +236,16 @@ class TestEndToEnd:
         
         # Test capability discovery
         capabilities = registry.list_capabilities()
-        assert "metadata" in capabilities
-        assert len(capabilities["metadata"]) > 0
+        assert "metadata_commands" in capabilities
+        assert len(capabilities["metadata_commands"]) > 0
         
         # Test finding plugins by capability
         metadata_plugins = registry.find_plugins_for_capability("find_files")
         assert len(metadata_plugins) == 1
-        assert "metadata" in metadata_plugins
+        assert "metadata_commands" in metadata_plugins
         
         # Test unregistration
-        success = registry.unregister("metadata")
+        success = registry.unregister("metadata_commands")
         assert success is True
         assert registry.get_plugin_count() == 0
 
