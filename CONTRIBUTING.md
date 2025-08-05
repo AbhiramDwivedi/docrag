@@ -61,13 +61,13 @@ Please follow the guidelines in `.github/copilot-instructions.md`:
 3. **Test your changes**
    ```bash
    # Test imports
-   python -c "from ingest.extractor import extract_text"
+   python -c "from backend.ingestion.extractor import extract_text"
    
    # Test ingestion (with test documents)
-   python -m ingest.ingest --mode full
+   python -m backend.ingestion.pipeline --mode full
    
    # Test CLI
-   python -m cli.ask "test query"
+   python -m interface.cli.ask "test query"
    ```
 
 4. **Commit and push**

@@ -86,7 +86,7 @@ python -m cli.ask "latest email about budget and related documents"
 The enhanced functionality integrates seamlessly with existing APIs:
 
 ```python
-from agent.factory import create_default_agent
+from backend.querying.agents.factory import create_default_agent
 
 agent = create_default_agent()
 

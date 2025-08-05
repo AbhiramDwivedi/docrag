@@ -19,7 +19,7 @@ Provides sophisticated analysis of relationships between documents:
 
 #### Usage Examples:
 ```python
-from agent.factory import create_phase3_agent
+from backend.querying.agents.factory import create_phase3_agent
 
 agent = create_phase3_agent()
 
@@ -45,7 +45,7 @@ Provides a knowledge graph representation of document relationships and entities
 
 #### Usage Examples:
 ```python
-from ingest.knowledge_graph import KnowledgeGraph, Entity, Relationship
+from backend.ingestion.storage.knowledge_graph import KnowledgeGraph, Entity, Relationship
 
 # Create knowledge graph
 kg = KnowledgeGraph("data/knowledge_graph.db")
@@ -124,7 +124,7 @@ Phase III enables complex queries that require coordination between multiple plu
 New factory functions for Phase III:
 
 ```python
-from agent.factory import (
+from backend.querying.agents.factory import (
     create_phase3_agent,     # Full Phase III capabilities
     create_default_agent,    # Phase II capabilities (default)
     create_minimal_agent     # Phase I capabilities only
@@ -177,11 +177,11 @@ Phase III is fully backward compatible:
 
 ```python
 # Existing Phase II code works unchanged
-from agent.factory import create_default_agent
+from backend.querying.agents.factory import create_default_agent
 agent = create_default_agent()  # Still uses Phase II capabilities
 
 # Upgrade to Phase III
-from agent.factory import create_phase3_agent  
+from backend.querying.agents.factory import create_phase3_agent  
 agent = create_phase3_agent()   # Adds Phase III capabilities
 ```
 
@@ -301,7 +301,7 @@ Test Phase III capabilities:
 python demo_phase3.py
 
 # Test specific features
-python -c "from agent.factory import create_phase3_agent; agent = create_phase3_agent()"
+python -c "from backend.querying.agents.factory import create_phase3_agent; agent = create_phase3_agent()"
 ```
 
 ## Architecture Benefits

@@ -61,7 +61,7 @@ DocQuest now uses a modular extractor architecture where each document type has 
 
 ### Factory Pattern
 ```python
-from ingest.extractors import get_extractor
+from backend.ingestion.extractors import get_extractor
 
 extractor = get_extractor(Path("document.pdf"))
 if extractor:
@@ -69,7 +69,7 @@ if extractor:
 ```
 
 ### Backward Compatibility
-- Existing code using `from ingest.extractor import extract_text` continues to work
+- Existing code using `from backend.ingestion.extractor import extract_text` continues to work
 - API remains the same: `extract_text(path) -> List[Unit]`
 
 ## Supported File Types
