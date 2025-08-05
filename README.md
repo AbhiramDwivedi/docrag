@@ -14,60 +14,72 @@ A local RAG pipeline that **quests through your document collections** to find a
 ```bash
 # 1. Clone and setup
 git clone <your-repo-url>
-cd localfsmc
+cd docrag
 python -m venv .venv
 .venv\Scripts\activate  # Windows
 # source .venv/bin/activate  # macOS/Linux
 
 # 2. Install dependencies
-pip install -r requirements.txt
+pip install -r backend/requirements.txt
 
 # 3. Create your config file
-copy config\config.yaml.template config\config.yaml  # Windows
-# cp config/config.yaml.template config/config.yaml  # macOS/Linux
+copy backend\shared\config.yaml.template backend\shared\config.yaml  # Windows
+# cp backend/shared/config.yaml.template backend/shared/config.yaml  # macOS/Linux
 
 # 4. Configure document folder and API key
-# Edit config/config.yaml:
+# Edit backend/shared/config.yaml:
 #   - Update sync_root to your document folder
 #   - Add your OpenAI API key
 
 # 5. Index your documents
-python -m ingest.ingest --mode full
+python -m backend.ingestion.pipeline --mode full
 
 # 6. Ask questions
-python -m cli.ask "What documents are available?"
+python -m backend.interface.cli.ask "What documents are available?"
 
 # 7. Start web API (optional)
-uvicorn api.app:app --reload
+uvicorn backend.querying.api:app --reload
 ```
 
 ## 📁 Project Structure
 
 ```
-├── api/                 # FastAPI web interface
-├── cli/                 # Command-line interface
-├── config/              # Configuration files
-├── docs/                # Documentation
-│   ├── ARCHITECTURE.md  # System architecture and data flow
-│   ├── EXCEL_PROCESSING.md # Excel processing details
-│   └── PDF_PROCESSING.md # LangChain + AI PDF processing
-├── ingest/              # Document processing pipeline
-│   ├── extractors/      # Modular document extractors
-│   │   ├── base.py      # Abstract extractor interface
-│   │   ├── pdf_extractor.py    # Advanced PDF + AI image analysis
-│   │   ├── docx_extractor.py   # Word document processing
-│   │   ├── pptx_extractor.py   # PowerPoint processing
-│   │   ├── xlsx_simple_extractor.py # Excel processing
-│   │   └── txt_extractor.py    # Plain text processing
-│   ├── extractor.py     # Main extraction interface (factory)
-│   ├── chunker.py       # Text chunking with NLTK
-│   ├── embed.py         # Sentence transformer embeddings
-│   ├── vector_store.py  # FAISS + SQLite storage
-│   └── ingest.py        # Main ingestion CLI
-└── watcher/             # File system monitoring
+docrag/
+├── .github/             # GitHub workflows and CI/CD
+├── backend/             # ALL backend functionality
+│   ├── data/            # Data storage (databases, indexes)
+│   ├── docs/            # Documentation
+│   │   ├── ARCHITECTURE.md  # System architecture and data flow
+│   │   ├── EXCEL_PROCESSING.md # Excel processing details
+│   │   └── PDF_PROCESSING.md # LangChain + AI PDF processing
+│   ├── examples/        # Usage examples and demos
+│   ├── ingestion/       # Document processing pipeline
+│   │   ├── extractors/  # Modular document extractors
+│   │   │   ├── base.py  # Abstract extractor interface
+│   │   │   ├── pdf_extractor.py    # Advanced PDF + AI image analysis
+│   │   │   ├── docx_extractor.py   # Word document processing
+│   │   │   ├── pptx_extractor.py   # PowerPoint processing
+│   │   │   ├── xlsx_simple_extractor.py # Excel processing
+│   │   │   └── txt_extractor.py    # Plain text processing
+│   │   ├── extractor.py # Main extraction interface (factory)
+│   │   ├── chunker.py   # Text chunking with NLTK
+│   │   ├── embed.py     # Sentence transformer embeddings
+│   │   ├── storage/     # FAISS + SQLite storage
+│   │   └── pipeline.py  # Main ingestion CLI
+│   ├── interface/       # User interfaces
+│   │   └── cli/         # Command-line interface
+│   ├── querying/        # Search and retrieval
+│   │   ├── agents/      # Intelligent agent framework
+│   │   └── api.py       # FastAPI web interface
+│   ├── shared/          # Configuration and utilities
+│   ├── tests/           # All test files
+│   ├── watcher/         # File system monitoring
+│   └── requirements.txt # Python dependencies
+├── README.md            # This file
+└── package.json         # Node.js dependencies (minimal)
 ```
 
-[📊 View detailed system architecture →](docs/ARCHITECTURE.md)
+[📊 View detailed system architecture →](backend/docs/ARCHITECTURE.md)
 
 ## 🔧 Configuration
 
@@ -75,13 +87,13 @@ uvicorn api.app:app --reload
 After cloning, create your configuration file:
 ```bash
 # Copy the template
-copy config\config.yaml.template config\config.yaml  # Windows
-cp config/config.yaml.template config/config.yaml    # macOS/Linux
+copy backend\shared\config.yaml.template backend\shared\config.yaml  # Windows
+cp backend/shared/config.yaml.template backend/shared/config.yaml    # macOS/Linux
 ```
 
 ### Document Folder Setup
 1. Choose any folder containing documents you want to search
-2. Update `config/config.yaml`:
+2. Update `backend/shared/config.yaml`:
    ```yaml
    sync_root: "~/Documents/MyDocuments"
    # or any path like "C:/Work/ProjectDocs" or "~/Dropbox/Research"
@@ -90,17 +102,12 @@ cp config/config.yaml.template config/config.yaml    # macOS/Linux
 ### OpenAI API Key Setup
 **Option 1: Direct config file (recommended)**
 1. Get your API key from [OpenAI Platform](https://platform.openai.com/api-keys)
-2. Edit `config/config.yaml`:
+2. Edit `backend/shared/config.yaml`:
    ```yaml
    openai_api_key: "your-actual-api-key-here"
    ```
 
-**Option 2: Setup script**
-```bash
-python setup_openai.py
-```
-
-**Option 3: Environment variable**
+**Option 2: Environment variable**
 ```bash
 export OPENAI_API_KEY="your-api-key"
 ```
@@ -155,18 +162,18 @@ For unsupported file formats, **export to PDF** for optimal processing:
 ### Document Ingestion
 ```bash
 # Full re-index
-python -m ingest.ingest --mode full
+python -m backend.ingestion.pipeline --mode full
 
 # Incremental update (default)
-python -m ingest.ingest --mode incremental
+python -m backend.ingestion.pipeline --mode incremental
 
 # Process specific file types
-python -m ingest.ingest --file-type pdf
-python -m ingest.ingest --file-type xlsx
-python -m ingest.ingest --file-type docx
+python -m backend.ingestion.pipeline --file-type pdf
+python -m backend.ingestion.pipeline --file-type xlsx
+python -m backend.ingestion.pipeline --file-type docx
 
 # Process specific files with enhanced options
-python -m ingest.ingest --file-type xlsx --target "quarterly_report.xlsx" --all-sheets
+python -m backend.ingestion.pipeline --file-type xlsx --target "quarterly_report.xlsx" --all-sheets
 ```
 
 ### Command Line Options
@@ -178,9 +185,9 @@ python -m ingest.ingest --file-type xlsx --target "quarterly_report.xlsx" --all-
 ### Querying Documents
 ```bash
 # CLI queries
-python -m cli.ask "What is the PCI compliance scope?"
-python -m cli.ask "Show me budget information from Excel files"
-python -m cli.ask "What are the project requirements?"
+python -m backend.interface.cli.ask "What is the PCI compliance scope?"
+python -m backend.interface.cli.ask "Show me budget information from Excel files"
+python -m backend.interface.cli.ask "What are the project requirements?"
 
 # Web API
 curl -X POST "http://localhost:8000/query" \
@@ -207,25 +214,25 @@ curl -X POST "http://localhost:8000/query" \
 
 ## 🔐 Security
 
-- API keys stored locally in `config/config.yaml` (git-ignored)
+- API keys stored locally in `backend/shared/config.yaml` (git-ignored)
 - Template configuration provided for safe sharing
 - No sensitive data committed to version control
 - Secure input prompts for API key setup
 
 ## 🚨 Important Notes
 
-1. **First Run**: Copy `config/config.yaml.template` to `config/config.yaml` and configure it
+1. **First Run**: Copy `backend/shared/config.yaml.template` to `backend/shared/config.yaml` and configure it
 2. **Document Path**: Use any local folder path containing your documents
 3. **File Permissions**: Ensure read access to your document folders
 4. **API Limits**: OpenAI API usage charges apply for question answering
-5. **Security**: Your `config/config.yaml` is git-ignored and stays local
+5. **Security**: Your `backend/shared/config.yaml` is git-ignored and stays local
 
 ## 🛟 Troubleshooting
 
 ### Common Issues
-- **"No module named 'ingest'"**: Run commands from project root directory
+- **"No module named 'backend'"**: Run commands from project root directory
 - **"Permission denied"**: Check file access permissions in your document folder
-- **"API key not configured"**: Run `python setup_openai.py`
+- **"API key not configured"**: Set API key in `backend/shared/config.yaml`
 - **"No relevant information found"**: Try different query phrasing or re-index documents
 
 ### File Processing Issues
