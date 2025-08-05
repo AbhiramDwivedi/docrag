@@ -1,0 +1,11 @@
+sync_root: "~/Documents/MyDocuments"
+db_path: "data/docmeta.db"
+vector_path: "data/vector.index"
+chunk_size: 800
+overlap: 150
+embed_model: "sentence-transformers/all-MiniLM-L6-v2"
+batch_size: 32
+# Set your OpenAI API key here (safer than environment variables)
+# Get your key from: https://platform.openai.com/api-keys
+# Run 'python setup_openai.py' for secure setup
+openai_api_key: "your-openai-api-key-here"
