@@ -67,10 +67,17 @@ The goal of this repo is to build **DocQuest** - a local RAG pipeline that quest
   * Regularly review and update all documentation files including README.md, architecture diagrams, and API documentation.  
   * Ensure documentation accurately reflects current implementation and features.  
   * Update design diagrams when architectural changes are made.
+  * Keep CI/CD workflows (`.github/workflows/ci.yml`) updated with current import paths and structure.
 * **Architecture Documentation**  
   * Maintain clear architecture diagrams showing component relationships.  
   * Document data flow patterns and integration points.  
   * Keep plugin architecture documentation current with implemented plugins.
+* **Architecture Diagram Updates**  
+  * **MANDATORY**: Always update `docs/ARCHITECTURE.md` diagrams when making structural changes.
+  * Update Mermaid diagrams to reflect new file paths, module names, or component relationships.
+  * Verify all sequence diagrams use correct module paths (e.g., `backend.ingestion.*`, `interface.cli.*`).
+  * Update component descriptions and file path references in diagram labels.
+  * Test diagram rendering after updates to ensure syntax correctness.
 
 ---
 
@@ -95,6 +102,7 @@ data/**
 * "Add a new plugin to the agent framework"
 * "Review and update the README.md documentation"
 * "Create tests for the metadata commands plugin"
+* "Review and update the CI workflow to match current structure"
 
 ---
 

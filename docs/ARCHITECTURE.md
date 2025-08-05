@@ -12,8 +12,8 @@ DocQuest is a local RAG pipeline that quests through documents from local folder
 graph TB
     %% User Interface Layer
     subgraph "User Interface"
-        CLI[CLI Interface<br/>cli/ask.py]
-        API[FastAPI Web API<br/>api/app.py]
+        CLI[CLI Interface<br/>interface/cli/ask.py]
+        API[FastAPI Web API<br/>backend/querying/api.py]
         WebUI[Next.js Web UI<br/>package.json]
     end
 
@@ -32,17 +32,17 @@ graph TB
         Watcher[File Watcher<br/>watcher/watch.py<br/>🔍 Monitors changes]
         
         subgraph "Modular Extractors"
-            ExtractorFactory[Extractor Factory<br/>ingest/extractor.py<br/>🏭 Routes to specialized extractors]
-            PDFExtractor[PDF Extractor<br/>extractors/pdf_extractor.py<br/>📄 LangChain + AI image analysis]
-            DOCXExtractor[DOCX Extractor<br/>extractors/docx_extractor.py<br/>📝 Word document processing]
-            PPTXExtractor[PPTX Extractor<br/>extractors/pptx_extractor.py<br/>📊 PowerPoint processing]
-            XLSXExtractor[XLSX Extractor<br/>extractors/xlsx_simple_extractor.py<br/>📈 Excel processing]
-            TXTExtractor[TXT Extractor<br/>extractors/txt_extractor.py<br/>📄 Plain text processing]
+            ExtractorFactory[Extractor Factory<br/>backend/ingestion/extractors/__init__.py<br/>🏭 Routes to specialized extractors]
+            PDFExtractor[PDF Extractor<br/>backend/ingestion/extractors/pdf_extractor.py<br/>📄 LangChain + AI image analysis]
+            DOCXExtractor[DOCX Extractor<br/>backend/ingestion/extractors/docx_extractor.py<br/>📝 Word document processing]
+            PPTXExtractor[PPTX Extractor<br/>backend/ingestion/extractors/pptx_extractor.py<br/>📊 PowerPoint processing]
+            XLSXExtractor[XLSX Extractor<br/>backend/ingestion/extractors/xlsx_extractor.py<br/>📈 Excel processing]
+            TXTExtractor[TXT Extractor<br/>backend/ingestion/extractors/txt_extractor.py<br/>📄 Plain text processing]
         end
         
-        Chunker[Text Chunker<br/>ingest/chunker.py<br/>✂️ NLTK-based chunking]
-        Embedder[Embedding Generator<br/>ingest/embed.py<br/>🧠 sentence-transformers]
-        Ingest[Ingestion Controller<br/>ingest/ingest.py<br/>🔄 Orchestrates pipeline]
+        Chunker[Text Chunker<br/>backend/ingestion/processors/chunker.py<br/>✂️ NLTK-based chunking]
+        Embedder[Embedding Generator<br/>backend/ingestion/processors/embed.py<br/>🧠 sentence-transformers]
+        Pipeline[Ingestion Controller<br/>backend/ingestion/pipeline.py<br/>🔄 Orchestrates pipeline]
     end
 
     %% Storage Layer
@@ -78,23 +78,23 @@ graph TB
     XLSXExtractor --> Chunker
     TXTExtractor --> Chunker
     
-    Watcher --> Ingest
-    Ingest --> ExtractorFactory
+    Watcher --> Pipeline
+    Pipeline --> ExtractorFactory
     Chunker --> Embedder
-    Embedder --> VectorDB
-    Embedder --> MetaDB
+    Embedder --> VectorStore
+    Embedder --> MetadataDB
     
-    CLI --> VectorDB
-    API --> VectorDB
+    CLI --> VectorStore
+    API --> VectorStore
     WebUI --> API
     
-    VectorDB --> OpenAI
+    VectorStore --> OpenAI
     CLI --> OpenAI
     API --> OpenAI
     
     Embedder --> HuggingFace
-    ConfigFile --> Ingest
-    ConfigFile --> OpenAI
+    SharedConfig --> Pipeline
+    SharedConfig --> OpenAI
 
     %% Styling
     classDef userInterface fill:#e1f5fe
@@ -105,9 +105,9 @@ graph TB
     classDef documents fill:#fce4ec
 
     class CLI,API,WebUI userInterface
-    class Watcher,Chunker,Embedder,Ingest processing
+    class Watcher,Chunker,Embedder,Pipeline processing
     class ExtractorFactory,PDFExtractor,DOCXExtractor,PPTXExtractor,XLSXExtractor,TXTExtractor extractors
-    class VectorDB,MetaDB,ConfigFile storage
+    class VectorStore,MetadataDB,SharedConfig storage
     class OpenAI,HuggingFace external
     class LocalDocs,PDFs,Word,Excel,PPT,TXT documents
 ```
@@ -119,19 +119,19 @@ graph TB
 ```mermaid
 sequenceDiagram
     participant User
-    participant Ingest as ingest.py
-    participant Factory as extractor.py (Factory)
+    participant Pipeline as pipeline.py
+    participant Factory as extractors/__init__.py (Factory)
     participant PDFExt as pdf_extractor.py
     participant DOCXExt as docx_extractor.py
-    participant XLSXExt as xlsx_simple_extractor.py
+    participant XLSXExt as xlsx_extractor.py
     participant Chunker as chunker.py
     participant Embedder as embed.py
     participant VectorStore as vector_store.py
     participant FAISS
     participant SQLite
 
-    User->>Ingest: python -m ingest.ingest
-    Ingest->>Factory: extract_text(file_path)
+    User->>Pipeline: python -m backend.ingestion.pipeline
+    Pipeline->>Factory: extract_text(file_path)
     
     alt PDF File
         Factory->>PDFExt: extract(pdf_path)
@@ -151,12 +151,12 @@ sequenceDiagram
         DOCXExt-->>Factory: List[Tuple[unit_id, text]]
     end
     
-    Factory-->>Ingest: List[Tuple[unit_id, text]]
-    Ingest->>Chunker: chunk_text(text, settings)
-    Chunker-->>Ingest: List[chunks]
-    Ingest->>Embedder: embed_texts(chunks)
-    Embedder-->>Ingest: vectors
-    Ingest->>VectorStore: upsert(chunk_ids, vectors, metadata)
+    Factory-->>Pipeline: List[Tuple[unit_id, text]]
+    Pipeline->>Chunker: chunk_text(text, settings)
+    Chunker-->>Pipeline: List[chunks]
+    Pipeline->>Embedder: embed_texts(chunks)
+    Embedder-->>Pipeline: vectors
+    Pipeline->>VectorStore: upsert(chunk_ids, vectors, metadata)
     VectorStore->>FAISS: Add vectors
     VectorStore->>SQLite: Store metadata
 ```
@@ -165,12 +165,12 @@ sequenceDiagram
 
 The document extraction system uses a factory pattern with specialized extractors:
 
-#### Factory Pattern (`ingest/extractor.py`)
+#### Factory Pattern (`backend/ingestion/extractors/__init__.py`)
 - Routes documents to appropriate extractors based on file extension
 - Maintains backward compatibility with existing `extract_text()` interface
 - Provides centralized error handling and logging
 
-#### Specialized Extractors (`ingest/extractors/`)
+#### Specialized Extractors (`backend/ingestion/extractors/`)
 - **PDF Extractor**: Advanced processing with LangChain and GPT-4 Vision image analysis
 - **DOCX Extractor**: Word document paragraph extraction using python-docx
 - **PPTX Extractor**: PowerPoint slide-by-slide text extraction
@@ -189,8 +189,8 @@ The document extraction system uses a factory pattern with specialized extractor
 ```mermaid
 sequenceDiagram
     participant User
-    participant CLI as cli/ask.py
-    participant VectorStore as vector_store.py
+    participant CLI as interface/cli/ask.py
+    participant VectorStore as backend/ingestion/storage/vector_store.py
     participant FAISS
     participant SQLite
     participant OpenAI as OpenAI API
@@ -217,7 +217,7 @@ sequenceDiagram
 ### 2. Modular Processing Pipeline
 - **Rationale**: Maintainability, testability, and extensibility
 - **Implementation**: 
-  - **Factory Pattern**: `ingest/extractor.py` routes documents to specialized extractors
+  - **Factory Pattern**: `backend/ingestion/extractors/__init__.py` routes documents to specialized extractors
   - **Specialized Extractors**: Individual classes for PDF (with AI image analysis), DOCX, PPTX, XLSX, and TXT
   - **Separate Modules**: Independent modules for extraction, chunking, embedding, and storage
 - **Benefits**: 
@@ -299,19 +299,19 @@ graph TB
 
 ## Extensibility Points
 
-1. **New File Formats**: Add extractors in `ingest/extractor.py`
-2. **Different Embeddings**: Modify `ingest/embed.py` 
-3. **Alternative LLMs**: Update `cli/ask.py` and `api/app.py`
-4. **Custom Chunking**: Extend `ingest/chunker.py`
-5. **Additional Metadata**: Enhance `ingest/vector_store.py`
+1. **New File Formats**: Add extractors in `backend/ingestion/extractors/`
+2. **Different Embeddings**: Modify `backend/ingestion/processors/embed.py` 
+3. **Alternative LLMs**: Update `interface/cli/ask.py` and `backend/querying/api.py`
+4. **Custom Chunking**: Extend `backend/ingestion/processors/chunker.py`
+5. **Additional Metadata**: Enhance `backend/ingestion/storage/vector_store.py`
 
 ## Deployment Patterns
 
 ### Local Development
 ```bash
-python -m ingest.ingest  # Document processing
-python -m cli.ask        # CLI queries
-uvicorn api.app:app      # Web API
+python -m backend.ingestion.pipeline  # Document processing
+python -m interface.cli.ask           # CLI queries
+uvicorn backend.querying.api:app      # Web API
 ```
 
 ### Production Deployment
