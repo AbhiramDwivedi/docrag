@@ -448,11 +448,15 @@ class MetadataCommandsPlugin(Plugin):
             
             # Note: Size and email filtering not available in basic schema
         
-        # Build final query with conditions first, then GROUP BY
+        # Build final query with conditions and appropriate GROUP BY
         if conditions:
-            query = base_query + " AND " + " AND ".join(conditions) + " GROUP BY file"
+            query = base_query + " AND " + " AND ".join(conditions)
         else:
-            query = base_query + " GROUP BY file"
+            query = base_query
+        
+        # Add GROUP BY only for basic schema (chunks table needs grouping)
+        if not has_enhanced:
+            query += " GROUP BY file"
         
         # Add sorting
         sort_column_map = {
