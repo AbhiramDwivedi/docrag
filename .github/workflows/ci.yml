@@ -28,16 +28,17 @@ jobs:
     
     - name: Check import structure
       run: |
-        python -c "from config.config import load_settings; print('✅ Config module imports correctly')"
-        python -c "from ingest.extractor import extract_text; print('✅ Extractor module imports correctly')"
-        python -c "from ingest.vector_store import VectorStore; print('✅ Vector store module imports correctly')"
+        python -c "from backend.shared.config import get_settings; print('✅ Config module imports correctly')"
+        python -c "from backend.ingestion.extractors import get_extractor; print('✅ Extractor module imports correctly')"
+        python -c "from backend.ingestion.storage.vector_store import VectorStore; print('✅ Vector store module imports correctly')"
+        python -c "from interface.cli.ask import answer; print('✅ CLI module imports correctly')"
     
     - name: Validate configuration template
       run: |
         python -c "
         import yaml
         from pathlib import Path
-        config = yaml.safe_load(Path('config/config.yaml.template').read_text())
+        config = yaml.safe_load(Path('backend/shared/config.yaml.template').read_text())
         required_keys = ['sync_root', 'db_path', 'vector_path', 'embed_model', 'openai_api_key']
         for key in required_keys:
             assert key in config, f'Missing required config key: {key}'
