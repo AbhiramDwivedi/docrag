@@ -232,7 +232,7 @@ def process_file_enhanced(path: Path, store: EnhancedVectorStore, settings):
     # Embed text content
     vectors = embed_texts(texts, settings.embed_model)
     
-    # Store in enhanced vector store with metadata
+    # Store in vector store with metadata
     store.upsert_with_metadata(
         [c['id'] for c in all_chunks], 
         vectors, 
@@ -241,7 +241,7 @@ def process_file_enhanced(path: Path, store: EnhancedVectorStore, settings):
         email_metadata
     )
     
-    rprint(f"   ✅ Stored {len(all_chunks)} chunks with enhanced metadata")
+    rprint(f"   ✅ Stored {len(all_chunks)} chunks with metadata")
 
 
 def main():
@@ -264,7 +264,7 @@ def main():
         set_all_sheets_mode(True)
         rprint("🔄 ALL-SHEETS MODE enabled: Will process all Excel sheets")
     
-    # Initialize enhanced vector store
+    # Initialize vector store
     try:
         from ingest.embed import get_embed_model
         embed_model = get_embed_model()
@@ -275,10 +275,10 @@ def main():
             Path(settings.db_path), 
             dim=embed_dim
         )
-        rprint(f"✅ Enhanced vector store initialized (dim={embed_dim})")
+        rprint(f"✅ Vector store initialized (dim={embed_dim})")
         
     except Exception as e:
-        rprint(f"❌ Failed to initialize enhanced vector store: {e}")
+        rprint(f"❌ Failed to initialize vector store: {e}")
         sys.exit(1)
     
     # Handle migration if requested

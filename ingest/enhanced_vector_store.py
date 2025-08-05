@@ -1,8 +1,8 @@
-"""Enhanced vector store with rich metadata support for Phase 2.
+"""Vector store with rich metadata support for Phase 2.
 
-This module extends the basic vector store with comprehensive metadata
-storage for files, emails, and other document types to support complex
-queries like "Find emails from John last week" and "Show newest Excel files".
+This module provides comprehensive metadata storage for files, emails, and
+other document types to support complex queries like "Find emails from John 
+last week" and "Show newest Excel files".
 """
 
 import faiss
@@ -17,17 +17,17 @@ from .vector_store import VectorStore
 
 
 class EnhancedVectorStore(VectorStore):
-    """Enhanced vector store with rich metadata support.
+    """Vector store with rich metadata support.
     
-    Extends the basic VectorStore to support:
-    - Comprehensive file metadata (size, dates, types, paths)  
+    Provides comprehensive document storage and search capabilities:
+    - File metadata (size, dates, types, paths)  
     - Email-specific metadata (senders, recipients, subjects)
     - Efficient querying for metadata-based searches
     - Backward compatibility with existing schema
     """
     
     def __init__(self, index_path: Path, db_path: Path, dim: int):
-        """Initialize enhanced vector store with metadata tables.
+        """Initialize vector store with metadata tables.
         
         Args:
             index_path: Path to FAISS index file
@@ -488,3 +488,17 @@ class EnhancedVectorStore(VectorStore):
             '.md': 'MARKDOWN'
         }
         return type_mapping.get(extension.lower(), 'OTHER')
+
+    @classmethod
+    def load(cls, index_path: Path, db_path: Path, dim: int = 384):
+        """Load an existing vector store from files.
+        
+        Args:
+            index_path: Path to FAISS index file
+            db_path: Path to SQLite database file
+            dim: Vector dimension (default 384 for sentence-transformers)
+            
+        Returns:
+            EnhancedVectorStore instance
+        """
+        return cls(index_path, db_path, dim)

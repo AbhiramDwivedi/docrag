@@ -24,3 +24,5 @@ pillow
 pdf2image
 # OpenAI for image analysis
 openai
+# Phase III dependencies
+networkx>=2.8

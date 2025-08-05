@@ -1,21 +1,59 @@
 """Agent factory for creating and configuring DocQuest agents.
 
 This module provides a convenient way to create and configure agents
-with the standard set of plugins for DocQuest functionality.
+with the standard set of plugins for DocQuest functionality, including
+Phase III advanced intelligence capabilities.
 """
 
 import logging
-from typing import Optional
+from typing import Optional, List
 from .agent import Agent
 from .registry import PluginRegistry
 from .plugins.semantic_search import SemanticSearchPlugin
 from .plugins.metadata_commands import MetadataCommandsPlugin
+from .plugins.document_relationships import DocumentRelationshipPlugin
+from .plugins.comprehensive_reporting import ComprehensiveReportingPlugin
 
 logger = logging.getLogger(__name__)
 
 
+def create_phase3_agent() -> Agent:
+    """Create an agent with all Phase III capabilities.
+    
+    This agent includes all plugins: semantic search, metadata commands,
+    document relationships, and comprehensive reporting.
+    
+    Returns:
+        Configured Agent instance with Phase III capabilities
+    """
+    registry = PluginRegistry()
+    
+    # Register all Phase III plugins
+    plugins = [
+        ("semantic_search", SemanticSearchPlugin),
+        ("metadata_commands", MetadataCommandsPlugin),
+        ("document_relationships", DocumentRelationshipPlugin),
+        ("comprehensive_reporting", ComprehensiveReportingPlugin)
+    ]
+    
+    for plugin_name, plugin_class in plugins:
+        try:
+            plugin_instance = plugin_class()
+            registry.register(plugin_instance)
+            logger.info(f"Registered Phase III plugin: {plugin_name}")
+        except Exception as e:
+            logger.error(f"Failed to register plugin {plugin_name}: {e}")
+    
+    agent = Agent(registry)
+    
+    logger.info(f"Created Phase III agent with {registry.get_plugin_count()} plugins")
+    logger.info(f"Available capabilities: {agent.get_capabilities()}")
+    
+    return agent
+
+
 def create_enhanced_agent() -> Agent:
-    """Create an agent with enhanced metadata functionality.
+    """Create an agent with enhanced metadata functionality (Phase II).
     
     This agent uses the new structured metadata commands plugin instead
     of the old NLP-based metadata plugin.
@@ -50,34 +88,12 @@ def create_enhanced_agent() -> Agent:
 
 
 def create_default_agent() -> Agent:
-    """Create an agent with the default set of plugins.
+    """Create an agent with the default set of plugins (Phase II).
     
     Returns:
         Configured Agent instance with semantic search and metadata plugins
     """
-    registry = PluginRegistry()
-    
-    # Register core plugins
-    try:
-        semantic_plugin = SemanticSearchPlugin()
-        registry.register(semantic_plugin)
-        logger.info("Registered semantic search plugin")
-    except Exception as e:
-        logger.error(f"Failed to register semantic search plugin: {e}")
-    
-    try:
-        metadata_plugin = MetadataCommandsPlugin()
-        registry.register(metadata_plugin)
-        logger.info("Registered metadata commands plugin")
-    except Exception as e:
-        logger.error(f"Failed to register metadata commands plugin: {e}")
-    
-    agent = Agent(registry)
-    
-    logger.info(f"Created agent with {registry.get_plugin_count()} plugins")
-    logger.info(f"Available capabilities: {agent.get_capabilities()}")
-    
-    return agent
+    return create_enhanced_agent()
 
 
 def create_agent_with_plugins(plugin_names: Optional[list] = None) -> Agent:
@@ -94,7 +110,9 @@ def create_agent_with_plugins(plugin_names: Optional[list] = None) -> Agent:
     # Available plugins
     available_plugins = {
         "semantic_search": SemanticSearchPlugin,
-        "metadata_commands": MetadataCommandsPlugin
+        "metadata_commands": MetadataCommandsPlugin,
+        "document_relationships": DocumentRelationshipPlugin,
+        "comprehensive_reporting": ComprehensiveReportingPlugin
     }
     
     # Use all plugins if none specified
@@ -116,5 +134,26 @@ def create_agent_with_plugins(plugin_names: Optional[list] = None) -> Agent:
     
     agent = Agent(registry)
     logger.info(f"Created agent with {registry.get_plugin_count()} plugins")
+    
+    return agent
+
+
+def create_minimal_agent() -> Agent:
+    """Create a minimal agent with only semantic search (Phase I).
+    
+    Returns:
+        Minimal agent instance with only semantic search
+    """
+    registry = PluginRegistry()
+    
+    try:
+        semantic_plugin = SemanticSearchPlugin()
+        registry.register(semantic_plugin)
+        logger.info("Registered semantic search plugin")
+    except Exception as e:
+        logger.error(f"Failed to register semantic search plugin: {e}")
+    
+    agent = Agent(registry)
+    logger.info(f"Created minimal agent with {registry.get_plugin_count()} plugins")
     
     return agent

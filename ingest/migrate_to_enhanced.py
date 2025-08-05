@@ -53,23 +53,23 @@ def migrate_database():
     if backup_path:
         print(f"✅ Backup created: {backup_path}")
     
-    # Initialize enhanced vector store (this will create new tables)
+    # Initialize vector store (this will create new tables)
     embed_model = get_embed_model()
     embed_dim = len(embed_model.encode("test"))
     
-    print(f"Initializing enhanced vector store (dim={embed_dim})...")
-    enhanced_store = EnhancedVectorStore(
+    print(f"Initializing vector store (dim={embed_dim})...")
+    vector_store = EnhancedVectorStore(
         index_path=settings.vector_path,
         db_path=settings.db_path, 
         dim=embed_dim
     )
     
     # Run migration
-    print("🔄 Migrating existing data to enhanced schema...")
-    enhanced_store.migrate_from_basic_store()
+    print("🔄 Migrating existing data to new schema...")
+    vector_store.migrate_from_basic_store()
     
     # Get statistics
-    stats = enhanced_store.get_file_statistics()
+    stats = vector_store.get_file_statistics()
     
     print("\n✅ Migration completed successfully!")
     print(f"📊 Collection statistics:")

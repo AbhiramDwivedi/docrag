@@ -1,2 +1,2 @@
 @echo off
-python ingest\ingest.py --mode incremental
+python ingest\enhanced_ingest.py --mode incremental

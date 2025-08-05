@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from agent.plugin import Plugin, PluginInfo
 from ingest.embed import embed_texts
-from ingest.vector_store import VectorStore
+from ingest.enhanced_vector_store import EnhancedVectorStore
 from config.config import settings
 from openai import OpenAI
 
@@ -72,10 +72,9 @@ class SemanticSearchPlugin(Plugin):
             
             # Initialize vector store if needed
             if self._vector_store is None:
-                self._vector_store = VectorStore(
+                self._vector_store = EnhancedVectorStore.load(
                     Path(settings.vector_path), 
-                    Path(settings.db_path), 
-                    dim=384
+                    Path(settings.db_path)
                 )
             
             # Embed the question

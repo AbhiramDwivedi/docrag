@@ -13,7 +13,12 @@ class PluginInfo:
     description: str
     version: str
     capabilities: List[str]
-    parameters: Dict[str, Any]
+    parameters: Dict[str, Any] = None  # Make optional with default None
+    
+    def __post_init__(self):
+        """Set default parameters if None."""
+        if self.parameters is None:
+            self.parameters = {}
 
 
 class Plugin(ABC):
