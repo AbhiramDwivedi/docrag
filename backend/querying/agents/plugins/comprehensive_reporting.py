@@ -10,10 +10,14 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass
 from pathlib import Path
+import sys
+
+# Add backend root to path
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
 
 from ..plugin import Plugin, PluginInfo
-from ingest.vector_store import VectorStore
-from ingest.enhanced_vector_store import EnhancedVectorStore
+from backend.ingestion.storage.vector_store import VectorStore
+from backend.ingestion.storage.enhanced_vector_store import EnhancedVectorStore
 from .document_relationships import DocumentRelationshipPlugin
 
 

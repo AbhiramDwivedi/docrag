@@ -15,10 +15,10 @@ from dataclasses import dataclass
 from enum import Enum
 
 # Add parent directories to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
 
-from agent.plugin import Plugin, PluginInfo
-from config.config import get_settings
+from backend.querying.agents.plugin import Plugin, PluginInfo
+from backend.shared.config import get_settings
 
 logger = logging.getLogger(__name__)
 

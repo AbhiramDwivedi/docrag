@@ -14,10 +14,15 @@ import numpy as np
 from pathlib import Path
 import json
 import sqlite3
+import sys
+from pathlib import Path
+
+# Add backend root to path
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
 
 from ..plugin import Plugin, PluginInfo
-from ingest.vector_store import VectorStore
-from ingest.enhanced_vector_store import EnhancedVectorStore
+from backend.ingestion.storage.vector_store import VectorStore
+from backend.ingestion.storage.enhanced_vector_store import EnhancedVectorStore
 
 
 logger = logging.getLogger(__name__)

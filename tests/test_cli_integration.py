@@ -8,7 +8,7 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from cli.ask import answer
+from interface.cli.ask import answer
 
 
 class TestCLIIntegration:
@@ -43,7 +43,7 @@ class TestCLIIntegration:
         """Test CLI module execution via subprocess."""
         # Test metadata query
         result = subprocess.run(
-            [sys.executable, "-m", "cli.ask", "how many files do we have?"],
+            [sys.executable, "-m", "interface.cli.ask", "how many files do we have?"],
             cwd=Path(__file__).parent.parent,
             capture_output=True,
             text=True

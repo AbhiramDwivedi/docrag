@@ -10,12 +10,12 @@ from pathlib import Path
 from typing import Dict, Any
 
 # Add parent directories to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
 
-from agent.plugin import Plugin, PluginInfo
-from ingest.embed import embed_texts
-from ingest.enhanced_vector_store import EnhancedVectorStore
-from config.config import settings
+from backend.querying.agents.plugin import Plugin, PluginInfo
+from backend.ingestion.processors.embedder import embed_texts
+from backend.ingestion.storage.enhanced_vector_store import EnhancedVectorStore
+from backend.shared.config import settings
 from openai import OpenAI
 
 logger = logging.getLogger(__name__)
