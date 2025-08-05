@@ -12,7 +12,7 @@ from pathlib import Path
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from agent import create_enhanced_agent
+from backend.querying.agents.factory import create_enhanced_agent
 from agent.query_parser import QueryParser
 
 def demo_query_parsing():

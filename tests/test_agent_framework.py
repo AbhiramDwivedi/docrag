@@ -9,9 +9,11 @@ import sys
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from agent import Agent, PluginRegistry, create_default_agent
+from backend.querying.agents.agent import Agent
+from backend.querying.agents.registry import PluginRegistry
+from backend.querying.agents.factory import create_default_agent
 from agent.plugin import Plugin, PluginInfo
-from agent.plugins.semantic_search import SemanticSearchPlugin
+from backend.querying.agents.plugins.semantic_search import SemanticSearchPlugin
 from agent.plugins.metadata import MetadataPlugin
 
 

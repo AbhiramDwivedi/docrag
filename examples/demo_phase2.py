@@ -13,7 +13,7 @@ from datetime import datetime
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from agent.factory import create_default_agent
+from backend.querying.agents.factory import create_default_agent
 from rich import print as rprint
 from rich.console import Console
 from rich.panel import Panel
@@ -91,7 +91,7 @@ def demo_vector_store():
     """Demonstrate vector store schema."""
     rprint("\n💾 [bold]Vector Store Schema[/bold]")
     
-    from ingest.enhanced_vector_store import EnhancedVectorStore
+    from backend.ingestion.storage.enhanced_vector_store import EnhancedVectorStore
     import tempfile
     
     with tempfile.TemporaryDirectory() as tmpdir:

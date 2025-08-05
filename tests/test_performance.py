@@ -9,8 +9,8 @@ from unittest.mock import patch, Mock
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from agent import create_default_agent
-from cli.ask import answer
+from backend.querying.agents.factory import create_default_agent
+from interface.cli.ask import answer
 
 
 class TestPerformance:

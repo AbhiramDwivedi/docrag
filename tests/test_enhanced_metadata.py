@@ -9,8 +9,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from agent.query_parser import QueryParser, create_enhanced_metadata_params
-from agent.plugins.metadata_commands import MetadataCommandsPlugin
-from agent import create_enhanced_agent
+from backend.querying.agents.plugins.metadata_commands import MetadataCommandsPlugin
+from backend.querying.agents.factory import create_enhanced_agent
 
 
 class TestQueryParser:
