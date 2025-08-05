@@ -9,8 +9,8 @@ CONFIG_PATH = Path(__file__).with_name("config.yaml")
 
 class Settings(BaseModel):
     sync_root: Path = Field(default=Path.home() / "Documents", description="Local document folder to watch and index")
-    db_path: Path = Field(default=Path("data/docmeta.db"))
-    vector_path: Path = Field(default=Path("data/vector.index"))
+    db_path: Path = Field(default=Path("backend/data/docmeta.db"))
+    vector_path: Path = Field(default=Path("backend/data/vector.index"))
     chunk_size: int = 800
     overlap: int = 150
     embed_model: str = "sentence-transformers/all-MiniLM-L6-v2"

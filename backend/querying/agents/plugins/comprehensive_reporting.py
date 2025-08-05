@@ -54,7 +54,7 @@ class ComprehensiveReportingPlugin(Plugin):
             db_path: Path to the database file
         """
         self.vector_store_path = vector_store_path or "data/vector.index"
-        self.db_path = db_path or "data/docmeta.db"
+        self.db_path = db_path or "backend/data/docmeta.db"
         self._vector_store = None
         self._relationship_plugin = None
         

@@ -18,13 +18,13 @@ def ensure_directory(path: Path) -> Path:
 
 def get_data_dir() -> Path:
     """Get the data directory path."""
-    return Path("data")
+    return Path("backend/data")
 
 
 def get_default_paths() -> Dict[str, str]:
     """Get default file paths for DocQuest data."""
     return {
-        "vector_path": "data/vector.index",
-        "db_path": "data/docmeta.db",
-        "knowledge_graph_path": "data/knowledge_graph.db"
+        "vector_path": "backend/data/vector.index",
+        "db_path": "backend/data/docmeta.db",
+        "knowledge_graph_path": "backend/data/knowledge_graph.db"
     }
