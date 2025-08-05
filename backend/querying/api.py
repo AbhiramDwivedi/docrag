@@ -6,7 +6,7 @@ from pathlib import Path
 # Add backend root to path for absolute imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from interface.cli.ask import answer
+from backend.interface.cli.ask import answer
 
 app = FastAPI()
 

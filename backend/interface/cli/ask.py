@@ -4,7 +4,7 @@ import logging
 from pathlib import Path
 
 # Add backend root to path for absolute imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 # Global agent instance - initialized on first use
 _agent = None

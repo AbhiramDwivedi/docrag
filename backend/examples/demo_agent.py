@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 # Add project root to path
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from backend.querying.agents.factory import create_default_agent
 
@@ -88,10 +88,10 @@ def demo_cli_backward_compatibility():
     print("\n🔄 CLI Backward Compatibility Demo")
     print("-" * 40)
     
-    from interface.cli.ask import answer
+    from backend.interface.cli.ask import answer
     
     print("The CLI interface works exactly as before:")
-    print("  python -m cli.ask 'how many files do we have?'")
+    print("  python -m backend.interface.cli.ask 'how many files do we have?'")
     
     result = answer("how many files do we have?")
     print(f"  → {result}")
