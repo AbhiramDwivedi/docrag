@@ -19,26 +19,29 @@ python -m venv .venv
 .venv\Scripts\activate  # Windows
 # source .venv/bin/activate  # macOS/Linux
 
-# 2. Install dependencies
-pip install -r backend/requirements.txt
+# 2. Navigate to backend directory
+cd backend
 
-# 3. Create your config file
-copy backend\shared\config.yaml.template backend\shared\config.yaml  # Windows
-# cp backend/shared/config.yaml.template backend/shared/config.yaml  # macOS/Linux
+# 3. Install dependencies
+pip install -r requirements.txt
 
-# 4. Configure document folder and API key
-# Edit backend/shared/config.yaml:
+# 4. Create your config file
+copy shared\config.yaml.template shared\config.yaml  # Windows
+# cp shared/config.yaml.template shared/config.yaml  # macOS/Linux
+
+# 5. Configure document folder and API key
+# Edit shared/config.yaml:
 #   - Update sync_root to your document folder
 #   - Add your OpenAI API key
 
-# 5. Index your documents
-python -m backend.ingestion.pipeline --mode full
+# 6. Index your documents
+python -m ingestion.pipeline --mode full
 
-# 6. Ask questions
-python -m backend.interface.cli.ask "What documents are available?"
+# 7. Ask questions
+python -m interface.cli.ask "What documents are available?"
 
-# 7. Start web API (optional)
-uvicorn backend.querying.api:app --reload
+# 8. Start web API (optional)
+uvicorn querying.api:app --reload
 ```
 
 ## 📁 Project Structure
@@ -161,19 +164,22 @@ For unsupported file formats, **export to PDF** for optimal processing:
 
 ### Document Ingestion
 ```bash
+# Navigate to backend directory first
+cd backend
+
 # Full re-index
-python -m backend.ingestion.pipeline --mode full
+python -m ingestion.pipeline --mode full
 
 # Incremental update (default)
-python -m backend.ingestion.pipeline --mode incremental
+python -m ingestion.pipeline --mode incremental
 
 # Process specific file types
-python -m backend.ingestion.pipeline --file-type pdf
-python -m backend.ingestion.pipeline --file-type xlsx
-python -m backend.ingestion.pipeline --file-type docx
+python -m ingestion.pipeline --file-type pdf
+python -m ingestion.pipeline --file-type xlsx
+python -m ingestion.pipeline --file-type docx
 
 # Process specific files with enhanced options
-python -m backend.ingestion.pipeline --file-type xlsx --target "quarterly_report.xlsx" --all-sheets
+python -m ingestion.pipeline --file-type xlsx --target "quarterly_report.xlsx" --all-sheets
 ```
 
 ### Command Line Options
@@ -184,12 +190,17 @@ python -m backend.ingestion.pipeline --file-type xlsx --target "quarterly_report
 
 ### Querying Documents
 ```bash
+# Navigate to backend directory first
+cd backend
+
 # CLI queries
-python -m backend.interface.cli.ask "What is the PCI compliance scope?"
-python -m backend.interface.cli.ask "Show me budget information from Excel files"
-python -m backend.interface.cli.ask "What are the project requirements?"
+python -m interface.cli.ask "What is the PCI compliance scope?"
+python -m interface.cli.ask "Show me budget information from Excel files"
+python -m interface.cli.ask "What are the project requirements?"
 
 # Web API
+uvicorn querying.api:app --reload
+# Then in another terminal:
 curl -X POST "http://localhost:8000/query" \
   -H "Content-Type: application/json" \
   -d '{"question": "What documents mention security requirements?"}'
