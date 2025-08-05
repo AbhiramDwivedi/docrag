@@ -8,7 +8,7 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from agent.query_parser import QueryParser, create_enhanced_metadata_params
+from backend.querying.agents.query_parser import QueryParser, create_enhanced_metadata_params
 from backend.querying.agents.plugins.metadata_commands import MetadataCommandsPlugin
 from backend.querying.agents.factory import create_enhanced_agent
 

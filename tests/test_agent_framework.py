@@ -12,9 +12,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from backend.querying.agents.agent import Agent
 from backend.querying.agents.registry import PluginRegistry
 from backend.querying.agents.factory import create_default_agent
-from agent.plugin import Plugin, PluginInfo
+from backend.querying.agents.plugin import Plugin, PluginInfo
 from backend.querying.agents.plugins.semantic_search import SemanticSearchPlugin
-from agent.plugins.metadata import MetadataPlugin
+from backend.querying.agents.plugins.metadata_commands import MetadataCommandsPlugin
 
 
 class TestPluginRegistry:
@@ -235,12 +235,12 @@ class TestSemanticSearchPlugin:
         assert "OpenAI API key not configured" in result["response"]
 
 
-class TestMetadataPlugin:
+class TestMetadataCommandsPlugin:
     """Test the metadata plugin."""
     
     def test_plugin_info(self):
         """Test plugin info retrieval."""
-        plugin = MetadataPlugin()
+        plugin = MetadataCommandsPlugin()
         info = plugin.get_info()
         
         assert info.name == "metadata"
@@ -249,14 +249,14 @@ class TestMetadataPlugin:
     
     def test_validate_params_valid(self):
         """Test parameter validation with valid params."""
-        plugin = MetadataPlugin()
+        plugin = MetadataCommandsPlugin()
         
         params = {"question": "how many files"}
         assert plugin.validate_params(params) is True
     
     def test_validate_params_invalid(self):
         """Test parameter validation with invalid params."""
-        plugin = MetadataPlugin()
+        plugin = MetadataCommandsPlugin()
         
         # Missing question
         params = {}
@@ -275,7 +275,7 @@ class TestMetadataPlugin:
         mock_db_path.exists.return_value = False
         mock_path.return_value = mock_db_path
         
-        plugin = MetadataPlugin()
+        plugin = MetadataCommandsPlugin()
         result = plugin.execute({"question": "how many files"})
         
         assert result["metadata"]["error"] == "no_database"

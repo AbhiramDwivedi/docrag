@@ -57,9 +57,9 @@ def demo_metadata_plugin_capabilities():
     """Demonstrate enhanced metadata plugin capabilities."""
     rprint("\n🧩 [bold]Enhanced Metadata Plugin Capabilities[/bold]")
     
-    from agent.plugins.metadata import MetadataPlugin
+    from backend.querying.agents.plugins.metadata_commands import MetadataCommandsPlugin
     
-    plugin = MetadataPlugin()
+    plugin = MetadataCommandsPlugin()
     info = plugin.get_info()
     
     rprint(f"\n📦 Plugin: {info.name} v{info.version}")

@@ -13,7 +13,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from backend.querying.agents.factory import create_enhanced_agent
-from agent.query_parser import QueryParser
+from backend.querying.agents.query_parser import QueryParser
 
 def demo_query_parsing():
     """Demo how natural language is parsed into structured commands."""
@@ -74,7 +74,7 @@ def demo_mcp_like_interface():
     print()
     
     # Show the transformation
-    from agent.query_parser import create_enhanced_metadata_params
+    from backend.querying.agents.query_parser import create_enhanced_metadata_params
     
     examples = [
         "find the three latest modified presentations",

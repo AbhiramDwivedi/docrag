@@ -221,13 +221,13 @@ class TestEndToEnd:
     
     def test_plugin_registry_management(self):
         """Test plugin registry management capabilities."""
-        from agent import PluginRegistry
-        from agent.plugins.metadata import MetadataPlugin
+        from backend.querying.agents.registry import PluginRegistry
+        from backend.querying.agents.plugins.metadata_commands import MetadataCommandsPlugin
         
         registry = PluginRegistry()
         
         # Test registration
-        plugin = MetadataPlugin()
+        plugin = MetadataCommandsPlugin()
         registry.register(plugin)
         
         assert registry.get_plugin_count() == 1
