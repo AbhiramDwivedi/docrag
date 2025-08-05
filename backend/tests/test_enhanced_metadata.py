@@ -6,11 +6,12 @@ import sys
 from pathlib import Path
 
 # Add project root to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from backend.querying.agents.query_parser import QueryParser, create_enhanced_metadata_params
-from backend.querying.agents.plugins.metadata_commands import MetadataCommandsPlugin
-from backend.querying.agents.factory import create_enhanced_agent
+from docquest.querying.agents.query_parser import QueryParser, create_enhanced_metadata_params
+from docquest.querying.agents.plugins.metadata_commands import MetadataCommandsPlugin
+from docquest.querying.agents.factory import create_enhanced_agent
 
 
 class TestQueryParser:

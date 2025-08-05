@@ -7,9 +7,10 @@ from pathlib import Path
 from unittest.mock import patch, Mock
 
 # Add project root to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from backend.querying.agents.factory import create_default_agent
+from docquest.querying.agents.factory import create_default_agent
 from interface.cli.ask import answer
 
 
@@ -221,8 +222,8 @@ class TestEndToEnd:
     
     def test_plugin_registry_management(self):
         """Test plugin registry management capabilities."""
-        from backend.querying.agents.registry import PluginRegistry
-        from backend.querying.agents.plugins.metadata_commands import MetadataCommandsPlugin
+        from docquest.querying.agents.registry import PluginRegistry
+        from docquest.querying.agents.plugins.metadata_commands import MetadataCommandsPlugin
         
         registry = PluginRegistry()
         

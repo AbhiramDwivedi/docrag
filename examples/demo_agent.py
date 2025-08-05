@@ -13,7 +13,7 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from backend.querying.agents.factory import create_default_agent
+from backend.src.docquest.querying.agents.factory import create_default_agent
 
 
 def demo_agent_capabilities():
@@ -97,7 +97,7 @@ def demo_cli_backward_compatibility():
     print(f"  → {result}")
     
     print("\nAPI interface also preserved:")
-    from backend.querying.api import app
+    from backend.src.docquest.querying.api import app
     from fastapi.testclient import TestClient
     
     client = TestClient(app)

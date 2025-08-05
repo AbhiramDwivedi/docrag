@@ -17,8 +17,8 @@ from enum import Enum
 # Add parent directories to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
 
-from backend.querying.agents.plugin import Plugin, PluginInfo
-from backend.shared.config import get_settings
+from docquest.querying.agents.plugin import Plugin, PluginInfo
+from docquest.shared.config import get_settings
 
 logger = logging.getLogger(__name__)
 

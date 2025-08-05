@@ -6,9 +6,10 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 # Add project root to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from backend.querying.api import app
+from docquest.querying.api import app
 
 
 class TestAPIIntegration:

@@ -13,7 +13,7 @@ from datetime import datetime
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from backend.querying.agents.factory import create_default_agent
+from backend.src.docquest.querying.agents.factory import create_default_agent
 from rich import print as rprint
 from rich.console import Console
 from rich.panel import Panel
@@ -57,7 +57,7 @@ def demo_metadata_plugin_capabilities():
     """Demonstrate enhanced metadata plugin capabilities."""
     rprint("\n🧩 [bold]Enhanced Metadata Plugin Capabilities[/bold]")
     
-    from backend.querying.agents.plugins.metadata_commands import MetadataCommandsPlugin
+    from backend.src.docquest.querying.agents.plugins.metadata_commands import MetadataCommandsPlugin
     
     plugin = MetadataCommandsPlugin()
     info = plugin.get_info()
@@ -91,7 +91,7 @@ def demo_vector_store():
     """Demonstrate vector store schema."""
     rprint("\n💾 [bold]Vector Store Schema[/bold]")
     
-    from backend.ingestion.storage.enhanced_vector_store import EnhancedVectorStore
+    from backend.src.docquest.ingestion.storage.enhanced_vector_store import EnhancedVectorStore
     import tempfile
     
     with tempfile.TemporaryDirectory() as tmpdir:

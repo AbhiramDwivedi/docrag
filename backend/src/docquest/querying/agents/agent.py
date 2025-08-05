@@ -453,7 +453,7 @@ class Agent:
         
         try:
             from openai import OpenAI
-            from backend.shared.config import get_settings
+            from docquest.shared.config import get_settings
             
             settings = get_settings()
             if not settings.openai_api_key:

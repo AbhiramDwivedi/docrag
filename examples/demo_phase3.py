@@ -13,7 +13,7 @@ from datetime import datetime
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from backend.querying.agents.factory import create_phase3_agent
+from backend.src.docquest.querying.agents.factory import create_phase3_agent
 from rich import print as rprint
 from rich.console import Console
 from rich.panel import Panel
@@ -126,7 +126,7 @@ def demo_knowledge_graph_integration():
     rprint("\n🕸️ [bold]Knowledge Graph Integration Demo[/bold]")
     
     try:
-        from backend.ingestion.storage.knowledge_graph import KnowledgeGraph, KnowledgeGraphBuilder, Entity, Relationship
+        from backend.src.docquest.ingestion.storage.knowledge_graph import KnowledgeGraph, KnowledgeGraphBuilder, Entity, Relationship
         
         # Create a demo knowledge graph
         kg = KnowledgeGraph("data/demo_knowledge_graph.db")
@@ -209,7 +209,7 @@ def demo_comprehensive_reporting():
     rprint("\n📊 [bold]Comprehensive Reporting Demo[/bold]")
     
     try:
-        from backend.querying.agents.plugins.comprehensive_reporting import ComprehensiveReportingPlugin
+        from backend.src.docquest.querying.agents.plugins.comprehensive_reporting import ComprehensiveReportingPlugin
         
         plugin = ComprehensiveReportingPlugin()
         
@@ -257,7 +257,7 @@ def demo_document_relationships():
     rprint("\n🔗 [bold]Document Relationship Analysis Demo[/bold]")
     
     try:
-        from backend.querying.agents.plugins.document_relationships import DocumentRelationshipPlugin
+        from backend.src.docquest.querying.agents.plugins.document_relationships import DocumentRelationshipPlugin
         
         plugin = DocumentRelationshipPlugin()
         

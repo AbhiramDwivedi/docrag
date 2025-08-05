@@ -6,12 +6,12 @@ from pathlib import Path
 # Add backend root to path for absolute imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from backend.ingestion.extractors import extract_text
-from backend.ingestion.processors.chunker import chunk_text
-from backend.ingestion.processors.embedder import embed_texts
-from backend.ingestion.storage.vector_store import VectorStore
-from backend.shared.config import settings
-from backend.shared.utils import get_file_hash
+from docquest.ingestion.extractors import extract_text
+from docquest.ingestion.processors.chunker import chunk_text
+from docquest.ingestion.processors.embedder import embed_texts
+from docquest.ingestion.storage.vector_store import VectorStore
+from docquest.shared.config import settings
+from docquest.shared.utils import get_file_hash
 from rich.progress import track
 
 

@@ -12,10 +12,10 @@ from typing import Dict, Any
 # Add parent directories to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
 
-from backend.querying.agents.plugin import Plugin, PluginInfo
-from backend.ingestion.processors.embedder import embed_texts
-from backend.ingestion.storage.enhanced_vector_store import EnhancedVectorStore
-from backend.shared.config import settings
+from docquest.querying.agents.plugin import Plugin, PluginInfo
+from docquest.ingestion.processors.embedder import embed_texts
+from docquest.ingestion.storage.enhanced_vector_store import EnhancedVectorStore
+from docquest.shared.config import settings
 from openai import OpenAI
 
 logger = logging.getLogger(__name__)

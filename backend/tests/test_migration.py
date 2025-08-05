@@ -1,4 +1,4 @@
-from backend.ingestion.storage.enhanced_vector_store import EnhancedVectorStore
+from docquest.ingestion.storage.enhanced_vector_store import EnhancedVectorStore
 from pathlib import Path
 
 # Test enhanced vector store migration

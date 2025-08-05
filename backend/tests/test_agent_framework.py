@@ -7,14 +7,15 @@ from unittest.mock import Mock, patch, MagicMock
 import sys
 
 # Add project root to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from backend.querying.agents.agent import Agent
-from backend.querying.agents.registry import PluginRegistry
-from backend.querying.agents.factory import create_default_agent
-from backend.querying.agents.plugin import Plugin, PluginInfo
-from backend.querying.agents.plugins.semantic_search import SemanticSearchPlugin
-from backend.querying.agents.plugins.metadata_commands import MetadataCommandsPlugin
+from docquest.querying.agents.agent import Agent
+from docquest.querying.agents.registry import PluginRegistry
+from docquest.querying.agents.factory import create_default_agent
+from docquest.querying.agents.plugin import Plugin, PluginInfo
+from docquest.querying.agents.plugins.semantic_search import SemanticSearchPlugin
+from docquest.querying.agents.plugins.metadata_commands import MetadataCommandsPlugin
 
 
 class TestPluginRegistry:
@@ -153,7 +154,7 @@ class TestAgent:
         capabilities = agent.get_capabilities()
         assert "test_capability" in capabilities
     
-    @patch('agent.plugins.semantic_search.settings')
+    @patch('docquest.querying.agents.plugins.semantic_search.settings')
     def test_query_processing_no_api_key(self, mock_settings):
         """Test query processing without API key."""
         mock_settings.openai_api_key = "your-openai-api-key-here"
@@ -223,7 +224,7 @@ class TestSemanticSearchPlugin:
         params = {"question": "test", "k": 0}
         assert plugin.validate_params(params) is False
     
-    @patch('agent.plugins.semantic_search.settings')
+    @patch('docquest.querying.agents.plugins.semantic_search.settings')
     def test_execute_no_api_key(self, mock_settings):
         """Test execution without API key."""
         mock_settings.openai_api_key = "your-openai-api-key-here"
@@ -243,15 +244,15 @@ class TestMetadataCommandsPlugin:
         plugin = MetadataCommandsPlugin()
         info = plugin.get_info()
         
-        assert info.name == "metadata"
-        assert "metadata_query" in info.capabilities
-        assert "file_statistics" in info.capabilities
+        assert info.name == "metadata_commands"
+        assert "find_files" in info.capabilities
+        assert "find_files" in info.capabilities
     
     def test_validate_params_valid(self):
         """Test parameter validation with valid params."""
         plugin = MetadataCommandsPlugin()
         
-        params = {"question": "how many files"}
+        params = {"operation": "find_files", "question": "how many files"}
         assert plugin.validate_params(params) is True
     
     def test_validate_params_invalid(self):
@@ -266,8 +267,8 @@ class TestMetadataCommandsPlugin:
         params = {"question": ""}
         assert plugin.validate_params(params) is False
     
-    @patch('agent.plugins.metadata.sqlite3')
-    @patch('agent.plugins.metadata.Path')
+    @patch('docquest.querying.agents.plugins.metadata_commands.sqlite3')
+    @patch('docquest.querying.agents.plugins.metadata_commands.Path')
     def test_execute_no_database(self, mock_path, mock_sqlite):
         """Test execution when database doesn't exist."""
         # Mock Path.exists to return False
@@ -291,11 +292,11 @@ class TestAgentIntegration:
         
         assert agent.registry.get_plugin_count() == 2  # semantic_search + metadata
         assert agent.registry.get_plugin("semantic_search") is not None
-        assert agent.registry.get_plugin("metadata") is not None
+        assert agent.registry.get_plugin("metadata_commands") is not None
         
         capabilities = agent.get_capabilities()
         assert "semantic_search" in capabilities
-        assert "metadata_query" in capabilities
+        assert "find_files" in capabilities
     
     def test_query_classification_metadata(self):
         """Test that metadata queries are properly classified."""
@@ -308,7 +309,7 @@ class TestAgentIntegration:
         assert "OpenAI API key" not in result
         assert ("files in the collection" in result or "No document database found" in result)
     
-    @patch('agent.plugins.semantic_search.settings')
+    @patch('docquest.querying.agents.plugins.semantic_search.settings')
     def test_query_classification_semantic(self, mock_settings):
         """Test that content queries are properly classified."""
         mock_settings.openai_api_key = "your-openai-api-key-here"

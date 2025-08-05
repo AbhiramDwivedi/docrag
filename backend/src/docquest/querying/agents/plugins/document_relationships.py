@@ -21,8 +21,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
 
 from ..plugin import Plugin, PluginInfo
-from backend.ingestion.storage.vector_store import VectorStore
-from backend.ingestion.storage.enhanced_vector_store import EnhancedVectorStore
+from docquest.ingestion.storage.vector_store import VectorStore
+from docquest.ingestion.storage.enhanced_vector_store import EnhancedVectorStore
 
 
 logger = logging.getLogger(__name__)
