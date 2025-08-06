@@ -4,7 +4,7 @@ import os
 # Add the project root to the path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from backend.querying.agents.plugins.metadata_commands import MetadataCommandsPlugin
+from backend.src.querying.agents.plugins.metadata_commands import MetadataCommandsPlugin
 import sqlite3
 
 # Test the exact parameters that would be generated

@@ -13,7 +13,7 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from backend.querying.agents.factory import create_default_agent
+from backend.src.querying.agents.factory import create_default_agent
 
 
 def demo_agent_capabilities():
@@ -88,7 +88,7 @@ def demo_cli_backward_compatibility():
     print("\n🔄 CLI Backward Compatibility Demo")
     print("-" * 40)
     
-    from interface.cli.ask import answer
+    from backend.src.interface.cli.ask import answer
     
     print("The CLI interface works exactly as before:")
     print("  python -m cli.ask 'how many files do we have?'")
@@ -97,7 +97,7 @@ def demo_cli_backward_compatibility():
     print(f"  → {result}")
     
     print("\nAPI interface also preserved:")
-    from backend.querying.api import app
+    from backend.src.querying.api import app
     from fastapi.testclient import TestClient
     
     client = TestClient(app)

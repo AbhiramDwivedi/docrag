@@ -9,8 +9,8 @@ from unittest.mock import patch, Mock
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from backend.querying.agents.factory import create_default_agent
-from interface.cli.ask import answer
+from backend.src.querying.agents.factory import create_default_agent
+from backend.src.interface.cli.ask import answer
 
 
 class TestPerformance:
@@ -221,8 +221,8 @@ class TestEndToEnd:
     
     def test_plugin_registry_management(self):
         """Test plugin registry management capabilities."""
-        from backend.querying.agents.registry import PluginRegistry
-        from backend.querying.agents.plugins.metadata_commands import MetadataCommandsPlugin
+        from backend.src.querying.agents.registry import PluginRegistry
+        from backend.src.querying.agents.plugins.metadata_commands import MetadataCommandsPlugin
         
         registry = PluginRegistry()
         

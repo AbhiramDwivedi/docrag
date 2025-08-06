@@ -38,5 +38,4 @@ config.yaml
 # Temporary files and database artifacts
 check_db.py
 check_schema.py
-test_*.py
-!tests/test_*.py
+# Note: test_*.py files are now allowed everywhere since tests are properly organized
