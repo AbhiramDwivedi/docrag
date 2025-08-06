@@ -17,8 +17,8 @@ from enum import Enum
 # Add parent directories to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
 
-from backend.src.querying.agents.plugin import Plugin, PluginInfo
-from backend.src.shared.config import get_settings
+from querying.agents.plugin import Plugin, PluginInfo
+from shared.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -170,7 +170,7 @@ class MetadataCommandsPlugin(Plugin):
     def get_info(self) -> PluginInfo:
         """Return plugin metadata and capabilities."""
         return PluginInfo(
-            name="metadata_commands",
+            name="metadata",
             description="Structured metadata operations with programmatic interface",
             version="2.0.0",
             capabilities=[

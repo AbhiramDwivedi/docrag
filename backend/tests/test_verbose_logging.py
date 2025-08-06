@@ -14,8 +14,9 @@ from unittest.mock import Mock, patch, MagicMock
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from backend.src.interface.cli.ask import (
+from interface.cli.ask import (
     VerboseFormatter,
     setup_logging,
     parse_args,

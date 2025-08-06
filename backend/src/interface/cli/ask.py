@@ -45,7 +45,7 @@ def get_agent():
     global _agent
     if _agent is None:
         try:
-            from backend.src.querying.agents.factory import create_enhanced_agent
+            from querying.agents.factory import create_enhanced_agent
             _agent = create_enhanced_agent()  # Use enhanced agent with structured metadata
         except ImportError as e:
             # Handle missing dependencies gracefully

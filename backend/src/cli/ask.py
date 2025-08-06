@@ -8,8 +8,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Import the real ask module
-from backend.src.interface.cli.ask import *
+from interface.cli.ask import *
 
 if __name__ == "__main__":
-    from backend.src.interface.cli.ask import main
+    from interface.cli.ask import main
     main()

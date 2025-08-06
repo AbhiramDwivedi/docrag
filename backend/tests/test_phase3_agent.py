@@ -1,4 +1,4 @@
-from backend.src.querying.agents.factory import create_phase3_agent
+from querying.agents.factory import create_phase3_agent
 
 # Test Phase III agent with real data
 print("Testing Phase III agent with real data...")

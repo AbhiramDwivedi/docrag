@@ -8,13 +8,15 @@ import sys
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from backend.src.querying.agents.agent import Agent
-from backend.src.querying.agents.registry import PluginRegistry
-from backend.src.querying.agents.factory import create_default_agent
-from backend.src.querying.agents.plugin import Plugin, PluginInfo
-from backend.src.querying.agents.plugins.semantic_search import SemanticSearchPlugin
-from backend.src.querying.agents.plugins.metadata_commands import MetadataCommandsPlugin
+from querying.agents.agent import Agent
+from querying.agents.registry import PluginRegistry
+from querying.agents.factory import create_default_agent
+from querying.agents.plugin import Plugin, PluginInfo
+from querying.agents.plugins.semantic_search import SemanticSearchPlugin
+from querying.agents.plugins.metadata_commands import MetadataCommandsPlugin
 
 
 class TestPluginRegistry:
@@ -244,14 +246,14 @@ class TestMetadataCommandsPlugin:
         info = plugin.get_info()
         
         assert info.name == "metadata"
-        assert "metadata_query" in info.capabilities
-        assert "file_statistics" in info.capabilities
+        assert "find_files" in info.capabilities
+        assert "get_file_stats" in info.capabilities
     
     def test_validate_params_valid(self):
         """Test parameter validation with valid params."""
         plugin = MetadataCommandsPlugin()
         
-        params = {"question": "how many files"}
+        params = {"operation": "find_files"}
         assert plugin.validate_params(params) is True
     
     def test_validate_params_invalid(self):
@@ -266,8 +268,8 @@ class TestMetadataCommandsPlugin:
         params = {"question": ""}
         assert plugin.validate_params(params) is False
     
-    @patch('backend.src.querying.agents.plugins.metadata_commands.sqlite3')
-    @patch('backend.src.querying.agents.plugins.metadata_commands.Path')
+    @patch('querying.agents.plugins.metadata_commands.sqlite3')
+    @patch('querying.agents.plugins.metadata_commands.Path')
     def test_execute_no_database(self, mock_path, mock_sqlite):
         """Test execution when database doesn't exist."""
         # Mock Path.exists to return False
@@ -276,7 +278,7 @@ class TestMetadataCommandsPlugin:
         mock_path.return_value = mock_db_path
         
         plugin = MetadataCommandsPlugin()
-        result = plugin.execute({"question": "how many files"})
+        result = plugin.execute({"operation": "find_files"})
         
         assert result["metadata"]["error"] == "no_database"
         assert "No document database found" in result["response"]
@@ -295,7 +297,7 @@ class TestAgentIntegration:
         
         capabilities = agent.get_capabilities()
         assert "semantic_search" in capabilities
-        assert "metadata_query" in capabilities
+        assert "find_files" in capabilities
     
     def test_query_classification_metadata(self):
         """Test that metadata queries are properly classified."""

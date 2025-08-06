@@ -7,11 +7,12 @@ from pathlib import Path
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 # Temporarily skip this import until query_parser module is implemented
-# from backend.src.querying.agents.query_parser import QueryParser, create_enhanced_metadata_params
-from backend.src.querying.agents.plugins.metadata_commands import MetadataCommandsPlugin
-from backend.src.querying.agents.factory import create_enhanced_agent
+# from querying.agents.query_parser import QueryParser, create_enhanced_metadata_params
+from querying.agents.plugins.metadata_commands import MetadataCommandsPlugin
+from querying.agents.factory import create_enhanced_agent
 
 # Skip query parser tests until module is implemented
 @pytest.mark.skip(reason="query_parser module not yet implemented")

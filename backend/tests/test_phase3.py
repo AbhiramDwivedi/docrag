@@ -3,10 +3,10 @@
 import pytest
 import tempfile
 from pathlib import Path
-from backend.src.querying.agents.factory import create_phase3_agent, create_default_agent
-from backend.src.querying.agents.plugins.document_relationships import DocumentRelationshipPlugin
-from backend.src.querying.agents.plugins.comprehensive_reporting import ComprehensiveReportingPlugin
-from backend.src.ingestion.storage.knowledge_graph import KnowledgeGraph, Entity, Relationship
+from querying.agents.factory import create_phase3_agent, create_default_agent
+from querying.agents.plugins.document_relationships import DocumentRelationshipPlugin
+from querying.agents.plugins.comprehensive_reporting import ComprehensiveReportingPlugin
+from ingestion.storage.knowledge_graph import KnowledgeGraph, Entity, Relationship
 
 
 class TestPhase3Implementation:

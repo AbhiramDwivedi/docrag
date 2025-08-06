@@ -7,7 +7,7 @@ import tempfile
 # Add the project root to the path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from backend.src.querying.agents.plugins.metadata_commands import MetadataCommandsPlugin
+from querying.agents.plugins.metadata_commands import MetadataCommandsPlugin
 
 
 class TestMetadataCommandsPlugin:

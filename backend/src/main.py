@@ -10,9 +10,9 @@ from pathlib import Path
 # Add backend root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from backend.src.ingestion.pipeline import main as ingestion_main
-from backend.src.querying.api import app as api_app
-from backend.src.interface.cli.ask import main as cli_main
+from ingestion.pipeline import main as ingestion_main
+from querying.api import app as api_app
+from interface.cli.ask import main as cli_main
 
 
 def run_ingestion():
