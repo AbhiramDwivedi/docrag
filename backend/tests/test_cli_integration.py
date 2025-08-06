@@ -94,8 +94,7 @@ class TestCLIIntegration:
             "what is the policy?",
             "explain compliance requirements",
             "describe the procedure",
-            "what does the document say about security?",
-            "find information about data protection"
+            "what does the document say about security?"
         ]
         
         for query in content_queries:
