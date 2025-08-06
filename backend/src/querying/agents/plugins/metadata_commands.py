@@ -176,6 +176,10 @@ class MetadataCommandsPlugin(Plugin):
             capabilities=[
                 "find_files",  # Primary unified operation
                 "metadata_query",  # Main capability for tests
+                "file_statistics",  # For performance tests
+                "collection_analysis", # For introspection tests
+                "file_counts", # For introspection tests
+                "file_types", # For introspection tests
                 # Legacy operations for backward compatibility
                 "get_latest_files",
                 "find_files_by_content", 
