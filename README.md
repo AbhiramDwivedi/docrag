@@ -32,39 +32,52 @@ copy config\config.yaml.template config\config.yaml  # Windows
 #   - Add your OpenAI API key
 
 # 5. Index your documents
-python -m ingest.ingest --mode full
+python -m backend.src.ingestion.pipeline --mode full
 
 # 6. Ask questions
-python -m cli.ask "What documents are available?"
+python -m backend.src.interface.cli.ask "What documents are available?"
 
 # 7. Start web API (optional)
-uvicorn api.app:app --reload
+python -m backend.src.querying.api
 ```
 
 ## 📁 Project Structure
 
 ```
-├── api/                 # FastAPI web interface
-├── cli/                 # Command-line interface
-├── config/              # Configuration files
-├── docs/                # Documentation
-│   ├── ARCHITECTURE.md  # System architecture and data flow
+├── backend/              # Main application code
+│   ├── src/              # Source code following standard Python layout
+│   │   ├── ingestion/    # Document processing pipeline
+│   │   │   ├── extractors/      # Modular document extractors
+│   │   │   │   ├── base.py      # Abstract extractor interface
+│   │   │   │   ├── pdf_extractor.py    # Advanced PDF + AI image analysis
+│   │   │   │   ├── docx_extractor.py   # Word document processing
+│   │   │   │   ├── pptx_extractor.py   # PowerPoint processing
+│   │   │   │   ├── xlsx_simple_extractor.py # Excel processing
+│   │   │   │   └── txt_extractor.py    # Plain text processing
+│   │   │   ├── processors/      # Text processing components
+│   │   │   │   ├── chunker.py   # Text chunking with NLTK
+│   │   │   │   └── embedder.py  # Sentence transformer embeddings
+│   │   │   ├── storage/         # Data storage components
+│   │   │   │   └── vector_store.py  # FAISS + SQLite storage
+│   │   │   └── pipeline.py      # Main ingestion pipeline
+│   │   ├── querying/     # Query processing and agents
+│   │   │   ├── agents/   # Agent framework with plugins
+│   │   │   └── api.py    # FastAPI web interface
+│   │   ├── interface/    # User interfaces
+│   │   │   └── cli/      # Command-line interface
+│   │   │       └── ask.py
+│   │   ├── shared/       # Shared utilities and configuration
+│   │   └── main.py       # Main application entry point
+│   └── tests/            # All test files and test resources
+│       └── resources/    # Test fixtures and data
+├── config/               # Configuration files
+├── docs/                 # Documentation
+│   ├── ARCHITECTURE.md   # System architecture and data flow
 │   ├── EXCEL_PROCESSING.md # Excel processing details
 │   └── PDF_PROCESSING.md # LangChain + AI PDF processing
-├── ingest/              # Document processing pipeline
-│   ├── extractors/      # Modular document extractors
-│   │   ├── base.py      # Abstract extractor interface
-│   │   ├── pdf_extractor.py    # Advanced PDF + AI image analysis
-│   │   ├── docx_extractor.py   # Word document processing
-│   │   ├── pptx_extractor.py   # PowerPoint processing
-│   │   ├── xlsx_simple_extractor.py # Excel processing
-│   │   └── txt_extractor.py    # Plain text processing
-│   ├── extractor.py     # Main extraction interface (factory)
-│   ├── chunker.py       # Text chunking with NLTK
-│   ├── embed.py         # Sentence transformer embeddings
-│   ├── vector_store.py  # FAISS + SQLite storage
-│   └── ingest.py        # Main ingestion CLI
-└── watcher/             # File system monitoring
+├── examples/             # Example scripts and demos
+├── watcher/              # File system monitoring
+└── requirements.txt      # Dependencies
 ```
 
 [📊 View detailed system architecture →](docs/ARCHITECTURE.md)
