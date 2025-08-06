@@ -3,10 +3,10 @@
 import pytest
 import tempfile
 from pathlib import Path
-from querying.agents.factory import create_phase3_agent, create_default_agent
-from querying.agents.plugins.document_relationships import DocumentRelationshipPlugin
-from querying.agents.plugins.comprehensive_reporting import ComprehensiveReportingPlugin
-from ingestion.storage.knowledge_graph import KnowledgeGraph, Entity, Relationship
+from src.querying.agents.factory import create_phase3_agent, create_default_agent
+from src.querying.agents.plugins.document_relationships import DocumentRelationshipPlugin
+from src.querying.agents.plugins.comprehensive_reporting import ComprehensiveReportingPlugin
+from src.ingestion.storage.knowledge_graph import KnowledgeGraph, Entity, Relationship
 
 
 class TestPhase3Implementation:
@@ -114,47 +114,58 @@ class TestPhase3Implementation:
             kg_path = Path(tmpdir) / "test_kg.db"
             kg = KnowledgeGraph(str(kg_path))
             
-            # Test entity creation
-            entity = Entity(
-                id="test_entity",
-                type="document",
-                name="Test Document",
-                properties={"size": 1024}
-            )
-            
-            assert kg.add_entity(entity)
-            
-            # Test entity retrieval
-            retrieved = kg.get_entity("test_entity")
-            assert retrieved is not None
-            assert retrieved.name == "Test Document"
-            
-            # Test relationship creation
-            entity2 = Entity(
-                id="test_entity_2",
-                type="person",
-                name="Test Person",
-                properties={}
-            )
-            kg.add_entity(entity2)
-            
-            relationship = Relationship(
-                source_id="test_entity",
-                target_id="test_entity_2",
-                relationship_type="authored_by",
-                properties={}
-            )
-            
-            assert kg.add_relationship(relationship)
-            
-            # Test relationship queries
-            related = kg.find_related_entities("test_entity")
-            assert len(related) > 0
-            
-            # Test graph statistics
-            stats = kg.get_statistics()
-            assert stats["total_entities"] >= 2
-            assert stats["total_relationships"] >= 1
+            try:
+                # Test entity creation
+                entity = Entity(
+                    id="test_entity",
+                    type="document",
+                    name="Test Document",
+                    properties={"size": 1024}
+                )
+                
+                assert kg.add_entity(entity)
+                
+                # Test entity retrieval
+                retrieved = kg.get_entity("test_entity")
+                assert retrieved is not None
+                assert retrieved.name == "Test Document"
+                
+                # Test relationship creation
+                entity2 = Entity(
+                    id="test_entity_2",
+                    type="person",
+                    name="Test Person",
+                    properties={}
+                )
+                kg.add_entity(entity2)
+                
+                relationship = Relationship(
+                    source_id="test_entity",
+                    target_id="test_entity_2",
+                    relationship_type="authored_by",
+                    properties={}
+                )
+                
+                assert kg.add_relationship(relationship)
+                
+                # Test relationship queries
+                related = kg.find_related_entities("test_entity")
+                assert len(related) > 0
+                
+                # Test graph statistics
+                stats = kg.get_statistics()
+                assert stats["total_entities"] >= 2
+                assert stats["total_relationships"] >= 1
+                
+            finally:
+                # Explicitly close database connection to avoid Windows file lock issues
+                if hasattr(kg, 'close'):
+                    kg.close()
+                elif hasattr(kg, '_conn') and kg._conn:
+                    kg._conn.close()
+                # Small delay to ensure file handles are released
+                import time
+                time.sleep(0.1)
     
     def test_backward_compatibility(self):
         """Test that Phase III maintains backward compatibility."""

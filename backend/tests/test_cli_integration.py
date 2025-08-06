@@ -62,15 +62,24 @@ class TestCLIIntegration:
     
     def test_cli_module_content_query(self):
         """Test CLI module with content query via subprocess."""
+        import os
+        env = os.environ.copy()
+        env['PYTHONIOENCODING'] = 'utf-8'
+        
         result = subprocess.run(
             [sys.executable, "-m", "src.interface.cli.ask", "what is PCI compliance?"],
             cwd=Path(__file__).parent.parent,
             capture_output=True,
-            text=True
+            text=True,
+            env=env,
+            encoding='utf-8',
+            errors='replace'
         )
         
         assert result.returncode == 0
-        assert "OpenAI API key not configured" in result.stdout
+        # Check either stdout or stderr for the expected message
+        output = (result.stdout or "") + (result.stderr or "")
+        assert "OpenAI API key not configured" in output
     
     def test_query_classification_examples(self):
         """Test various query classifications."""

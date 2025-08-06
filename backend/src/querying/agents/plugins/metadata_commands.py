@@ -486,10 +486,9 @@ class MetadataCommandsPlugin(Plugin):
         plugin_logger.info(f"Parameters: file_type={file_type}, count={count}, time_filter={time_filter}")
         
         # Log the SQL query for debug level
-        sql_logger.debug("", extra={
+        sql_logger.debug(f"Executing query with {len(query_params)} parameters", extra={
             'sql_query': query,
-            'sql_params': query_params,
-            'msg': f"Executing query with {len(query_params)} parameters"
+            'sql_params': query_params
         })
         
         cursor.execute(query, query_params)

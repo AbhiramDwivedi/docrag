@@ -2,9 +2,15 @@ import sys
 import argparse
 import logging
 from pathlib import Path
+import os
 
 # Add backend root to path for absolute imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
+# Fix Windows encoding issues with Unicode characters
+if sys.platform == "win32":
+    # Set environment variable to force UTF-8 output
+    os.environ['PYTHONIOENCODING'] = 'utf-8'
 
 # Global agent instance - initialized on first use
 _agent = None
@@ -191,7 +197,14 @@ def main():
     
     # Process the question with specified verbosity
     result = answer(question, args.verbose)
-    print(result)
+    
+    # Print result with proper encoding for Windows
+    try:
+        print(result)
+    except UnicodeEncodeError:
+        # Fallback: replace problematic Unicode characters
+        safe_result = result.encode('ascii', 'replace').decode('ascii')
+        print(safe_result)
 
 if __name__ == '__main__':
     main()
