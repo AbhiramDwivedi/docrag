@@ -29,6 +29,8 @@ class VerboseFormatter(logging.Formatter):
         
         # Base indentation is none for top-level messages
         indent = ''
+        if record.levelno == logging.DEBUG:
+            indent = '   '
         
         # Format message with emoji and indentation
         if hasattr(record, 'sql_query'):
