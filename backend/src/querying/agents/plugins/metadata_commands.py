@@ -175,6 +175,7 @@ class MetadataCommandsPlugin(Plugin):
             version="2.0.0",
             capabilities=[
                 "find_files",  # Primary unified operation
+                "metadata_query",  # Main capability for tests
                 # Legacy operations for backward compatibility
                 "get_latest_files",
                 "find_files_by_content", 

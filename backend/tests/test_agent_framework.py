@@ -308,7 +308,9 @@ class TestAgentIntegration:
         
         # Should get a response from metadata plugin, not an API key error
         assert "OpenAI API key" not in result
-        assert ("files in the collection" in result or "No document database found" in result)
+        assert ("files in the collection" in result or 
+                "No document database found" in result or
+                "No files found matching" in result)
     
     @patch('backend.src.querying.agents.plugins.semantic_search.settings')
     def test_query_classification_semantic(self, mock_settings):

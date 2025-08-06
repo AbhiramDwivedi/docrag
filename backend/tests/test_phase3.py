@@ -19,7 +19,7 @@ class TestPhase3Implementation:
         # Check that all expected plugins are registered
         expected_plugins = [
             "semantic_search",
-            "metadata_commands", 
+            "metadata", 
             "document_relationships",
             "comprehensive_reporting"
         ]

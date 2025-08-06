@@ -221,22 +221,22 @@ class Agent:
         
         if has_email_indicators and has_metadata_indicators:
             # Queries like "emails from John last week" - primarily metadata
-            if self.registry.get_plugin("metadata_commands"):
-                plugins_to_use.append("metadata_commands")
+            if self.registry.get_plugin("metadata"):
+                plugins_to_use.append("metadata")
                 self._reasoning_trace.append("Detected email metadata query")
                 classification_logger.info("Classified as email metadata query")
         
         elif has_email_indicators:
             # Pure email queries - route to metadata commands for enhanced processing
-            if self.registry.get_plugin("metadata_commands"):
-                plugins_to_use.append("metadata_commands")
+            if self.registry.get_plugin("metadata"):
+                plugins_to_use.append("metadata")
                 self._reasoning_trace.append("Detected email-specific query")
                 classification_logger.info("Classified as email-specific query")
         
         elif has_metadata_indicators:
             # Pure metadata queries - prefer enhanced metadata commands
-            if self.registry.get_plugin("metadata_commands"):
-                plugins_to_use.append("metadata_commands")
+            if self.registry.get_plugin("metadata"):
+                plugins_to_use.append("metadata")
                 self._reasoning_trace.append("Detected metadata query keywords")
                 classification_logger.info("Classified as metadata query")
         
@@ -275,7 +275,7 @@ class Agent:
         
         if is_complex:
             # Add complementary plugins for complex queries
-            for plugin_name in ["metadata_commands", "semantic_search", "document_relationships"]:
+            for plugin_name in ["metadata", "semantic_search", "document_relationships"]:
                 if self.registry.get_plugin(plugin_name) and plugin_name not in plugins_to_use:
                     plugins_to_use.append(plugin_name)
                     self._reasoning_trace.append(f"Added {plugin_name} for complex query")
@@ -301,7 +301,7 @@ class Agent:
             Dictionary of parameters for the plugin
         """
         # Plugin-specific parameter preparation
-        if plugin_name == "metadata_commands":
+        if plugin_name == "metadata":
             # Use LLM to generate structured metadata commands
             return self._generate_metadata_params_with_llm(question)
         
