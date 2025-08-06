@@ -153,7 +153,7 @@ class TestAgent:
         capabilities = agent.get_capabilities()
         assert "test_capability" in capabilities
     
-    @patch('agent.plugins.semantic_search.settings')
+    @patch('backend.src.querying.agents.plugins.semantic_search.settings')
     def test_query_processing_no_api_key(self, mock_settings):
         """Test query processing without API key."""
         mock_settings.openai_api_key = "your-openai-api-key-here"
@@ -223,7 +223,7 @@ class TestSemanticSearchPlugin:
         params = {"question": "test", "k": 0}
         assert plugin.validate_params(params) is False
     
-    @patch('agent.plugins.semantic_search.settings')
+    @patch('backend.src.querying.agents.plugins.semantic_search.settings')
     def test_execute_no_api_key(self, mock_settings):
         """Test execution without API key."""
         mock_settings.openai_api_key = "your-openai-api-key-here"
@@ -266,8 +266,8 @@ class TestMetadataCommandsPlugin:
         params = {"question": ""}
         assert plugin.validate_params(params) is False
     
-    @patch('agent.plugins.metadata.sqlite3')
-    @patch('agent.plugins.metadata.Path')
+    @patch('backend.src.querying.agents.plugins.metadata_commands.sqlite3')
+    @patch('backend.src.querying.agents.plugins.metadata_commands.Path')
     def test_execute_no_database(self, mock_path, mock_sqlite):
         """Test execution when database doesn't exist."""
         # Mock Path.exists to return False
@@ -308,7 +308,7 @@ class TestAgentIntegration:
         assert "OpenAI API key" not in result
         assert ("files in the collection" in result or "No document database found" in result)
     
-    @patch('agent.plugins.semantic_search.settings')
+    @patch('backend.src.querying.agents.plugins.semantic_search.settings')
     def test_query_classification_semantic(self, mock_settings):
         """Test that content queries are properly classified."""
         mock_settings.openai_api_key = "your-openai-api-key-here"

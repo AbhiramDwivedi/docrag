@@ -43,7 +43,7 @@ class TestCLIIntegration:
         """Test CLI module execution via subprocess."""
         # Test metadata query
         result = subprocess.run(
-            [sys.executable, "-m", "interface.cli.ask", "how many files do we have?"],
+            [sys.executable, "-m", "backend.src.interface.cli.ask", "how many files do we have?"],
             cwd=Path(__file__).parent.parent,
             capture_output=True,
             text=True
@@ -56,7 +56,7 @@ class TestCLIIntegration:
     def test_cli_module_content_query(self):
         """Test CLI module with content query via subprocess."""
         result = subprocess.run(
-            [sys.executable, "-m", "interface.cli.ask", "what is PCI compliance?"],
+            [sys.executable, "-m", "backend.src.interface.cli.ask", "what is PCI compliance?"],
             cwd=Path(__file__).parent.parent,
             capture_output=True,
             text=True
