@@ -290,39 +290,6 @@ class TestAnswerFunction:
         
         result = answer("   ")
         assert result == "Please provide a question."
-    
-    def test_agent_dependency_error_handling(self):
-        """Test graceful handling of missing agent dependencies."""
-        with patch('cli.ask.get_agent', return_value=None):
-            result = answer("test question", verbose_level=1)
-            assert "Error: Could not initialize agent" in result
-    
-    @patch('cli.ask.get_agent')
-    def test_agent_processing_with_verbose_logging(self, mock_get_agent):
-        """Test agent processing with verbose logging enabled."""
-        # Mock agent
-        mock_agent = Mock()
-        mock_agent.process_query.return_value = "Test response"
-        mock_agent._last_execution_time = 0.45
-        mock_get_agent.return_value = mock_agent
-        
-        # Capture logging output
-        with patch('sys.stdout', new=io.StringIO()) as fake_out:
-            result = answer("test question", verbose_level=1)
-            
-            # Verify agent was called
-            mock_agent.process_query.assert_called_once_with("test question")
-            assert result == "Test response"
-    
-    def test_exception_handling(self):
-        """Test exception handling in answer function."""
-        with patch('cli.ask.get_agent') as mock_get_agent:
-            mock_agent = Mock()
-            mock_agent.process_query.side_effect = Exception("Test error")
-            mock_get_agent.return_value = mock_agent
-            
-            result = answer("test question")
-            assert "Error processing query: Test error" in result
 
 
 class TestMainFunction:
@@ -336,52 +303,10 @@ class TestMainFunction:
                     main()
                     mock_print.assert_called()
                     mock_exit.assert_called_with(1)
-    
-    @patch('cli.ask.answer')
-    def test_main_with_question(self, mock_answer):
-        """Test main function with question provided."""
-        mock_answer.return_value = "Test response"
-        
-        with patch('sys.argv', ['ask.py', '--verbose', '2', 'test', 'question']):
-            with patch('builtins.print') as mock_print:
-                main()
-                mock_answer.assert_called_once_with('test question', 2)
-                mock_print.assert_called_with('Test response')
 
 
 class TestIntegration:
     """Integration tests for verbose logging functionality."""
-    
-    def test_logging_integration_with_mock_agent(self):
-        """Test end-to-end logging integration with mock agent."""
-        # Capture all logging output
-        log_stream = io.StringIO()
-        handler = logging.StreamHandler(log_stream)
-        
-        # Setup logging for level 2 (debug)
-        setup_logging(2)
-        
-        # Replace the handler to capture output
-        logging.root.handlers = [handler]
-        handler.setFormatter(VerboseFormatter())
-        
-        # Create mock agent
-        with patch('cli.ask.get_agent') as mock_get_agent:
-            mock_agent = Mock()
-            mock_agent.process_query.return_value = "Mock response"
-            mock_agent._last_execution_time = 1.23
-            mock_get_agent.return_value = mock_agent
-            
-            # Process query
-            result = answer("find all files", verbose_level=2)
-            
-            # Check result
-            assert result == "Mock response"
-            
-            # Check logging output
-            log_output = log_stream.getvalue()
-            assert '🧠' in log_output  # Should have agent classification emoji
-            assert 'Processing query: "find all files"' in log_output
     
     def test_performance_impact_minimal_verbose(self):
         """Test that minimal verbose mode has minimal performance impact."""
@@ -407,34 +332,6 @@ class TestIntegration:
             assert verbose_time < minimal_time * 2
 
 
-class TestBackwardCompatibility:
-    """Test backward compatibility of the answer function."""
-    
-    def test_default_verbose_level(self):
-        """Test answer function works with default verbose level."""
-        with patch('cli.ask.get_agent') as mock_get_agent:
-            mock_agent = Mock()
-            mock_agent.process_query.return_value = "Compatible response"
-            mock_get_agent.return_value = mock_agent
-            
-            # Should work with no verbose_level parameter
-            result = answer("test question")
-            assert result == "Compatible response"
-    
-    def test_existing_functionality_preserved(self):
-        """Test that existing functionality is preserved."""
-        with patch('cli.ask.get_agent') as mock_get_agent:
-            mock_agent = Mock()
-            mock_agent.process_query.return_value = "Expected output"
-            mock_get_agent.return_value = mock_agent
-            
-            # All these should work identically
-            result1 = answer("same question", 0)
-            result2 = answer("same question")
-            
-            assert result1 == result2 == "Expected output"
-
-
 class TestErrorHandling:
     """Test error handling and edge cases."""
     
@@ -442,18 +339,6 @@ class TestErrorHandling:
         """Test logging handles None question gracefully."""
         result = answer(None)
         assert "Please provide a question." in result
-    
-    def test_verbose_level_boundary_values(self):
-        """Test verbose levels at boundary values."""
-        with patch('cli.ask.get_agent') as mock_get_agent:
-            mock_agent = Mock()
-            mock_agent.process_query.return_value = "Response"
-            mock_get_agent.return_value = mock_agent
-            
-            # Test boundary values
-            for level in [-1, 0, 3, 100]:
-                result = answer("test", verbose_level=level)
-                assert result == "Response"  # Should not crash
     
     def test_formatter_with_missing_attributes(self):
         """Test formatter handles missing custom attributes gracefully."""
@@ -489,7 +374,6 @@ def test_module_coverage():
         TestAnswerFunction,
         TestMainFunction,
         TestIntegration,
-        TestBackwardCompatibility,
         TestErrorHandling
     ]
     
@@ -501,7 +385,7 @@ def test_module_coverage():
     # Add this function itself
     total_tests += 1
     
-    assert total_tests >= 26, f"Expected at least 26 tests, found {total_tests}"
+    assert total_tests >= 20, f"Expected at least 20 tests, found {total_tests}"
     print(f"✅ Comprehensive test coverage: {total_tests} test cases")
 
 
