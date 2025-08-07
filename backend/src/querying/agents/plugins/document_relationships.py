@@ -22,7 +22,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
 
 from ..plugin import Plugin, PluginInfo
 from ingestion.storage.vector_store import VectorStore
-from ingestion.storage.enhanced_vector_store import EnhancedVectorStore
 
 
 logger = logging.getLogger(__name__)
@@ -136,15 +135,10 @@ class DocumentRelationshipPlugin(Plugin):
         if self._vector_store is None:
             try:
                 # Initialize vector store
-                if Path(self.db_path).exists():
-                    self._vector_store = EnhancedVectorStore.load(
-                        Path(self.vector_store_path), 
-                        Path(self.db_path)
-                    )
-                else:
-                    # Fallback to basic vector store if database doesn't exist
-                    self._vector_store = VectorStore.load(Path(self.vector_store_path))
-                    logger.warning("Using basic vector store - metadata features unavailable")
+                self._vector_store = VectorStore.load(
+                    Path(self.vector_store_path), 
+                    Path(self.db_path)
+                )
             except Exception as e:
                 logger.error(f"Failed to load vector store: {e}")
                 raise
