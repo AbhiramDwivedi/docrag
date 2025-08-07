@@ -26,3 +26,8 @@ pdf2image
 openai
 # Phase III dependencies
 networkx>=2.8
+
+# Testing dependencies
+pytest
+pytest-cov
+pytest-mock
