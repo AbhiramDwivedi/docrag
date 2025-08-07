@@ -13,6 +13,7 @@ from .plugins.semantic_search import SemanticSearchPlugin
 from .plugins.metadata_commands import MetadataCommandsPlugin
 from .plugins.document_relationships import DocumentRelationshipPlugin
 from .plugins.comprehensive_reporting import ComprehensiveReportingPlugin
+from .plugins.knowledge_graph import KnowledgeGraphPlugin
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +22,7 @@ def create_phase3_agent() -> Agent:
     """Create an agent with all Phase III capabilities.
     
     This agent includes all plugins: semantic search, metadata commands,
-    document relationships, and comprehensive reporting.
+    document relationships, comprehensive reporting, and knowledge graph.
     
     Returns:
         Configured Agent instance with Phase III capabilities
@@ -33,7 +34,8 @@ def create_phase3_agent() -> Agent:
         ("semantic_search", SemanticSearchPlugin),
         ("metadata_commands", MetadataCommandsPlugin),
         ("document_relationships", DocumentRelationshipPlugin),
-        ("comprehensive_reporting", ComprehensiveReportingPlugin)
+        ("comprehensive_reporting", ComprehensiveReportingPlugin),
+        ("knowledge_graph", KnowledgeGraphPlugin)
     ]
     
     for plugin_name, plugin_class in plugins:
@@ -87,6 +89,40 @@ def create_enhanced_agent() -> Agent:
     return agent
 
 
+def create_knowledge_graph_agent() -> Agent:
+    """Create an agent with knowledge graph capabilities.
+    
+    This agent includes semantic search, metadata commands, and knowledge graph plugins
+    for enhanced entity exploration and relationship analysis.
+    
+    Returns:
+        Configured Agent instance with knowledge graph capabilities
+    """
+    registry = PluginRegistry()
+    
+    # Register core plugins
+    plugins = [
+        ("semantic_search", SemanticSearchPlugin),
+        ("metadata_commands", MetadataCommandsPlugin),
+        ("knowledge_graph", KnowledgeGraphPlugin)
+    ]
+    
+    for plugin_name, plugin_class in plugins:
+        try:
+            plugin_instance = plugin_class()
+            registry.register(plugin_instance)
+            logger.info(f"Registered plugin: {plugin_name}")
+        except Exception as e:
+            logger.error(f"Failed to register plugin {plugin_name}: {e}")
+    
+    agent = Agent(registry)
+    
+    logger.info(f"Created knowledge graph agent with {registry.get_plugin_count()} plugins")
+    logger.info(f"Available capabilities: {agent.get_capabilities()}")
+    
+    return agent
+
+
 def create_default_agent() -> Agent:
     """Create an agent with the default set of plugins (Phase II).
     
@@ -112,7 +148,8 @@ def create_agent_with_plugins(plugin_names: Optional[list] = None) -> Agent:
         "semantic_search": SemanticSearchPlugin,
         "metadata_commands": MetadataCommandsPlugin,
         "document_relationships": DocumentRelationshipPlugin,
-        "comprehensive_reporting": ComprehensiveReportingPlugin
+        "comprehensive_reporting": ComprehensiveReportingPlugin,
+        "knowledge_graph": KnowledgeGraphPlugin
     }
     
     # Use all plugins if none specified
