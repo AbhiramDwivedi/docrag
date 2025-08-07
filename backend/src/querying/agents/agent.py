@@ -247,6 +247,31 @@ class Agent:
             "content", "text", "information"
         ]
         
+        # Check for Knowledge Graph queries - NEW
+        entity_keywords = [
+            "who", "who is", "who works", "who manages", "who leads",
+            "what company", "what organization", "what org", 
+            "people", "person", "employee", "staff", "team member",
+            "organization", "company", "org", "corporation", "corp",
+            "works at", "works for", "employed by", "manages", "leads",
+            "related to", "connected to", "associated with",
+            "relationships between", "how are", "connection between"
+        ]
+        
+        has_entity_indicators = any(keyword in question_lower for keyword in entity_keywords)
+        
+        # Knowledge Graph routing logic
+        if has_entity_indicators and self.registry.get_plugin("knowledge_graph"):
+            plugins_to_use.append("knowledge_graph")
+            self._reasoning_trace.append("Detected entity/relationship query - using knowledge graph")
+            classification_logger.info("Classified as knowledge graph query")
+            
+            # For entity queries, also use semantic search for hybrid results
+            if self.registry.get_plugin("semantic_search"):
+                plugins_to_use.append("semantic_search")
+                self._reasoning_trace.append("Adding semantic search for hybrid entity search")
+                classification_logger.info("Added semantic search for hybrid entity results")
+        
         is_content_query = (
             any(keyword in question_lower for keyword in content_keywords) or
             (not plugins_to_use and not any(word in question_lower for word in [
@@ -312,6 +337,10 @@ class Agent:
         elif plugin_name == "comprehensive_reporting":
             # Generate parameters for reporting
             return self._generate_reporting_params(question)
+        
+        elif plugin_name == "knowledge_graph":
+            # Generate parameters for knowledge graph operations
+            return self._generate_kg_params(question)
         
         # Basic parameters for other plugins
         params = {
@@ -607,6 +636,51 @@ Respond with only the JSON, no other text:"""
             'time_filter': time_filter,
             'keywords': None
         }
+    
+    def _generate_kg_params(self, question: str) -> Dict[str, Any]:
+        """Generate parameters for knowledge graph operations.
+        
+        Args:
+            question: Natural language question
+            
+        Returns:
+            Dictionary of parameters for KnowledgeGraphPlugin
+        """
+        question_lower = question.lower()
+        
+        # Determine the operation type based on question patterns
+        if any(word in question_lower for word in ["who works", "who is", "employee", "staff"]):
+            operation = "find_entities"
+            entity_type = "person"
+        elif any(word in question_lower for word in ["what company", "what organization", "organization", "corp"]):
+            operation = "find_entities"
+            entity_type = "organization"
+        elif any(word in question_lower for word in ["project", "initiative", "program"]):
+            operation = "find_entities"
+            entity_type = "topic"
+        elif any(word in question_lower for word in ["where", "location", "city", "office"]):
+            operation = "find_entities"
+            entity_type = "location"
+        elif any(word in question_lower for word in ["related to", "connected", "relationship", "how are"]):
+            operation = "hybrid_search"  # Use hybrid search for relationship queries
+        elif any(word in question_lower for word in ["statistics", "stats", "overview"]):
+            operation = "get_statistics"
+        else:
+            # Default to hybrid search for general entity questions
+            operation = "hybrid_search"
+            
+        params = {
+            "operation": operation,
+            "question": question,
+            "max_depth": 2,
+            "max_entities": 10
+        }
+        
+        # Add entity type if we determined one
+        if operation == "find_entities" and 'entity_type' in locals():
+            params["entity_type"] = entity_type
+            
+        return params
     
     def _synthesize_response(self, question: str, results: List[tuple]) -> str:
         """Enhanced response synthesis with multi-step query support.

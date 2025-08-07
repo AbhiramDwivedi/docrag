@@ -17,7 +17,7 @@ from shared.utils import get_file_hash
 from rich.progress import track
 
 
-def process_file(path: Path, store: EnhancedVectorStore, kg: KnowledgeGraph = None):
+def process_file(path: Path, store: EnhancedVectorStore, kg: KnowledgeGraph):
     file_id = get_file_hash(path)
     units = extract_text(path)
     all_chunks, texts, meta = [], [], []
@@ -37,16 +37,17 @@ def process_file(path: Path, store: EnhancedVectorStore, kg: KnowledgeGraph = No
     if not texts:
         return
     
-    # Extract entities for knowledge graph if available
-    if kg is not None:
-        try:
-            kg_builder = KnowledgeGraphBuilder(kg)
-            entities = kg_builder.extract_entities_from_text(full_text, str(path))
-            for entity in entities:
-                kg.add_entity(entity)
-        except Exception as e:
-            # Don't fail the entire pipeline if KG extraction fails
-            print(f"⚠️ Knowledge graph extraction failed for {path.name}: {e}")
+    # Extract entities and relationships for knowledge graph
+    try:
+        kg_builder = KnowledgeGraphBuilder(kg)
+        entities, relationships = kg_builder.extract_entities_from_text(full_text, str(path))
+        for entity in entities:
+            kg.add_entity(entity)
+        for relationship in relationships:
+            kg.add_relationship(relationship)
+    except Exception as e:
+        # Don't fail the entire pipeline if KG extraction fails
+        print(f"⚠️ Knowledge graph extraction failed for {path.name}: {e}")
     
     vectors = embed_texts(texts, settings.embed_model)
     
@@ -75,7 +76,6 @@ def main():
     parser.add_argument('--file-type', help='Process only specific file types (e.g., xlsx, pdf, docx)')
     parser.add_argument('--target', help='Process specific file by name (for --all-sheets option)')
     parser.add_argument('--all-sheets', action='store_true', help='Process ALL sheets in Excel files (removes 15-sheet limit)')
-    parser.add_argument('--skip-kg', action='store_true', help='Skip knowledge graph processing (for backward compatibility)')
     args = parser.parse_args()
     
     # Set all-sheets mode if requested
@@ -85,16 +85,10 @@ def main():
     
     store = EnhancedVectorStore(Path(settings.vector_path), Path(settings.db_path), dim=384)
     
-    # Initialize knowledge graph unless skipped
-    kg = None
-    if not args.skip_kg:
-        try:
-            kg_path = Path("data/knowledge_graph.db")
-            kg = KnowledgeGraph(str(kg_path))
-            print("🧠 Knowledge graph initialized")
-        except Exception as e:
-            print(f"⚠️ Failed to initialize knowledge graph: {e}")
-            print("📄 Continuing with vector-only processing")
+    # Initialize knowledge graph (mandatory)
+    kg_path = Path("data/knowledge_graph.db")
+    kg = KnowledgeGraph(str(kg_path))
+    print("🧠 Knowledge graph initialized")
     
     # Get all files or filter by type
     if args.file_type:
@@ -124,18 +118,17 @@ def main():
             print(f"❌ Failed to process {file.name}: {e}")
             failed_count += 1
     
-    # Print knowledge graph statistics if available
-    if kg:
-        try:
-            stats = kg.get_statistics()
-            print(f"\n🧠 Knowledge Graph Stats:")
-            print(f"   📊 Total entities: {stats.get('total_entities', 0)}")
-            print(f"   🔗 Total relationships: {stats.get('total_relationships', 0)}")
-            entity_types = stats.get('entity_types', {})
-            if entity_types:
-                print(f"   📋 Entity types: {dict(entity_types)}")
-        except Exception as e:
-            print(f"⚠️ Failed to get knowledge graph stats: {e}")
+    # Print knowledge graph statistics
+    try:
+        stats = kg.get_statistics()
+        print(f"\n🧠 Knowledge Graph Stats:")
+        print(f"   📊 Total entities: {stats.get('total_entities', 0)}")
+        print(f"   🔗 Total relationships: {stats.get('total_relationships', 0)}")
+        entity_types = stats.get('entity_types', {})
+        if entity_types:
+            print(f"   📋 Entity types: {dict(entity_types)}")
+    except Exception as e:
+        print(f"⚠️ Failed to get knowledge graph stats: {e}")
     
     print(f"\n✅ Processing complete: {processed_count} files processed, {failed_count} failed")
 

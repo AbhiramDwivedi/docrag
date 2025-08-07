@@ -687,23 +687,22 @@ class KnowledgeGraphBuilder:
         """
         self.kg = knowledge_graph
     
-    def extract_entities_from_text(self, text: str, document_path: str) -> List[Entity]:
-        """Extract entities from text using simple heuristics.
+    def extract_entities_from_text(self, text: str, document_path: str) -> Tuple[List[Entity], List[Relationship]]:
+        """Extract entities and relationships from text using improved heuristics.
         
         Args:
             text: Text to extract entities from
             document_path: Path of the source document
             
         Returns:
-            List of extracted entities
+            Tuple of (entities, relationships) extracted from text
         """
         entities = []
+        relationships = []
         
-        # Simple entity extraction - in a real implementation, 
-        # you would use NLP libraries like spaCy or NLTK
+        import re
         
         # Extract email addresses as person entities
-        import re
         email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
         emails = re.findall(email_pattern, text)
         
@@ -717,35 +716,194 @@ class KnowledgeGraphBuilder:
                 confidence=0.9
             ))
         
-        # Extract organization names (simple heuristic)
-        org_keywords = ['Inc', 'LLC', 'Corp', 'Company', 'Organization', 'Foundation']
-        words = text.split()
-        for i, word in enumerate(words):
-            if any(keyword in word for keyword in org_keywords) and i > 0:
-                org_name = ' '.join(words[max(0, i-2):i+1])
-                entity_id = f"org_{org_name.replace(' ', '_').lower()}"
-                entities.append(Entity(
-                    id=entity_id,
-                    type='organization',
-                    name=org_name,
-                    properties={'source_document': document_path},
-                    confidence=0.7
-                ))
+        # Extract person names using improved patterns
+        person_patterns = [
+            r'\b(?:Mr\.|Mrs\.|Ms\.|Dr\.|Prof\.)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\b',  # Titles
+            r'\b([A-Z][a-z]+\s+[A-Z][a-z]+)\b(?:\s+(?:said|wrote|reported|presented|worked|manages|leads))',  # Action context
+            r'(?:authored by|written by|created by|presented by)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)',  # Authorship
+        ]
         
-        # Extract topics/concepts (very simple approach)
-        topic_keywords = ['project', 'budget', 'meeting', 'report', 'analysis', 'strategy']
-        for keyword in topic_keywords:
-            if keyword.lower() in text.lower():
-                entity_id = f"topic_{keyword.lower()}"
-                entities.append(Entity(
-                    id=entity_id,
-                    type='topic',
-                    name=keyword.title(),
-                    properties={'source_document': document_path},
-                    confidence=0.6
-                ))
+        for pattern in person_patterns:
+            matches = re.findall(pattern, text)
+            for name in matches:
+                if len(name.strip()) > 3:  # Filter out short matches
+                    entity_id = f"person_{name.replace(' ', '_').lower()}"
+                    entities.append(Entity(
+                        id=entity_id,
+                        type='person',
+                        name=name,
+                        properties={'source_document': document_path, 'extraction_method': 'pattern'},
+                        confidence=0.8
+                    ))
         
-        return entities
+        # Extract organization names with improved patterns
+        org_patterns = [
+            r'\b([A-Z][a-zA-Z\s&]+(?:Inc|LLC|Corp|Company|Corporation|Organization|Foundation|University|Institute)\.?)\b',
+            r'\b([A-Z][a-zA-Z\s&]+(?:Ltd|Limited|Group|Association|Agency|Department)\.?)\b',
+        ]
+        
+        for pattern in org_patterns:
+            matches = re.findall(pattern, text)
+            for org_name in matches:
+                if len(org_name.strip()) > 3:
+                    entity_id = f"org_{org_name.replace(' ', '_').replace('&', 'and').lower()}"
+                    entities.append(Entity(
+                        id=entity_id,
+                        type='organization',
+                        name=org_name.strip(),
+                        properties={'source_document': document_path, 'extraction_method': 'pattern'},
+                        confidence=0.8
+                    ))
+        
+        # Extract locations 
+        location_patterns = [
+            r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*),\s*([A-Z]{2})\b',  # City, State
+            r'\bin\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s*,?\s*(?:USA|United States|Canada|UK)\b',  # Cities with countries
+        ]
+        
+        for pattern in location_patterns:
+            matches = re.findall(pattern, text)
+            for match in matches:
+                location = match if isinstance(match, str) else ' '.join(filter(None, match))
+                if len(location.strip()) > 2:
+                    entity_id = f"location_{location.replace(' ', '_').replace(',', '').lower()}"
+                    entities.append(Entity(
+                        id=entity_id,
+                        type='location',
+                        name=location.strip(),
+                        properties={'source_document': document_path, 'extraction_method': 'pattern'},
+                        confidence=0.7
+                    ))
+        
+        # Extract projects and topics with context
+        topic_patterns = [
+            r'\b(?:Project|Initiative|Program)\s+([A-Z][a-zA-Z\s]+)',
+            r'\b([A-Z][a-zA-Z\s]+)\s+(?:project|initiative|program)\b',
+            r'\bregarding\s+([a-zA-Z\s]+)',
+            r'\babout\s+([a-zA-Z\s]+)',
+        ]
+        
+        for pattern in topic_patterns:
+            matches = re.findall(pattern, text, re.IGNORECASE)
+            for topic in matches:
+                topic = topic.strip()
+                if len(topic) > 3 and len(topic) < 50:  # Reasonable topic length
+                    entity_id = f"topic_{topic.replace(' ', '_').lower()}"
+                    entities.append(Entity(
+                        id=entity_id,
+                        type='topic',
+                        name=topic.title(),
+                        properties={'source_document': document_path, 'extraction_method': 'pattern'},
+                        confidence=0.6
+                    ))
+        
+        # Extract relationships
+        relationships.extend(self._extract_relationships(entities, text, document_path))
+        
+        # Add document entity
+        doc_entity_id = f"document_{Path(document_path).stem}"
+        entities.append(Entity(
+            id=doc_entity_id,
+            type='document',
+            name=Path(document_path).name,
+            properties={'path': document_path, 'type': Path(document_path).suffix},
+            confidence=1.0
+        ))
+        
+        # Create MENTIONS relationships between document and all other entities
+        for entity in entities[:-1]:  # Exclude the document entity itself
+            relationships.append(Relationship(
+                source_id=doc_entity_id,
+                target_id=entity.id,
+                relationship_type='MENTIONS',
+                properties={'source_document': document_path},
+                weight=1.0,
+                confidence=0.8
+            ))
+        
+        return entities, relationships
+    
+    def _extract_relationships(self, entities: List[Entity], text: str, document_path: str) -> List[Relationship]:
+        """Extract relationships between entities from text patterns.
+        
+        Args:
+            entities: List of entities found in the text
+            text: Original text
+            document_path: Path of the source document
+            
+        Returns:
+            List of relationships found
+        """
+        relationships = []
+        import re  # Import re module here
+        
+        # Create entity lookup by name for easier matching
+        entity_by_name = {entity.name.lower(): entity for entity in entities}
+        
+        # Employment/affiliation relationships
+        employment_patterns = [
+            r'([A-Z][a-zA-Z\s]+)\s+(?:works? (?:at|for)|employed by|hired by)\s+([A-Z][a-zA-Z\s&]+)',
+            r'([A-Z][a-zA-Z\s&]+)\s+(?:employee|staff|member)\s+([A-Z][a-zA-Z\s]+)',
+            r'([A-Z][a-zA-Z\s]+)\s+(?:at|from)\s+([A-Z][a-zA-Z\s&]+(?:Inc|Corp|Company|Organization))',
+        ]
+        
+        for pattern in employment_patterns:
+            matches = re.findall(pattern, text, re.IGNORECASE)
+            for person_name, org_name in matches:
+                person_entity = entity_by_name.get(person_name.lower().strip())
+                org_entity = entity_by_name.get(org_name.lower().strip())
+                
+                if person_entity and org_entity:
+                    relationships.append(Relationship(
+                        source_id=person_entity.id,
+                        target_id=org_entity.id,
+                        relationship_type='WORKS_FOR',
+                        properties={'source_document': document_path, 'extraction_method': 'pattern'},
+                        weight=1.0,
+                        confidence=0.7
+                    ))
+        
+        # Management relationships
+        management_patterns = [
+            r'([A-Z][a-zA-Z\s]+)\s+(?:manages|leads|heads|supervises)\s+([A-Z][a-zA-Z\s]+)',
+            r'([A-Z][a-zA-Z\s]+)\s+(?:manager|director|head)\s+of\s+([A-Z][a-zA-Z\s]+)',
+        ]
+        
+        for pattern in management_patterns:
+            matches = re.findall(pattern, text, re.IGNORECASE)
+            for manager_name, managed_entity in matches:
+                manager_entity = entity_by_name.get(manager_name.lower().strip())
+                managed = entity_by_name.get(managed_entity.lower().strip())
+                
+                if manager_entity and managed:
+                    relationships.append(Relationship(
+                        source_id=manager_entity.id,
+                        target_id=managed.id,
+                        relationship_type='MANAGES',
+                        properties={'source_document': document_path, 'extraction_method': 'pattern'},
+                        weight=1.0,
+                        confidence=0.7
+                    ))
+        
+        # Co-occurrence relationships (entities mentioned together)
+        for i, entity1 in enumerate(entities):
+            for entity2 in entities[i+1:]:
+                if entity1.type != entity2.type:  # Only cross-type relationships
+                    # Simple proximity check: if entities appear in same sentence
+                    sentences = text.split('.')
+                    for sentence in sentences:
+                        if entity1.name.lower() in sentence.lower() and entity2.name.lower() in sentence.lower():
+                            relationships.append(Relationship(
+                                source_id=entity1.id,
+                                target_id=entity2.id,
+                                relationship_type='CO_OCCURS',
+                                properties={'source_document': document_path, 'context': sentence.strip()},
+                                weight=0.5,
+                                confidence=0.5
+                            ))
+                            break  # Only add one co-occurrence per pair
+        
+        return relationships
     
     def build_from_document_collection(self, vector_store) -> bool:
         """Build knowledge graph from a document collection.

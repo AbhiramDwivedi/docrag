@@ -88,7 +88,7 @@ class TestKnowledgeGraphIntegration:
         
         test_text = "John Smith works for Acme Corp. Contact him at john@acme.com about the Budget project."
         
-        entities = kg_builder.extract_entities_from_text(test_text, "/test/doc.txt")
+        entities, relationships = kg_builder.extract_entities_from_text(test_text, "/test/doc.txt")
         
         # Should extract at least person, organization, and topic entities
         assert len(entities) >= 3
@@ -122,10 +122,13 @@ class TestKnowledgeGraphIntegration:
             
             # Read the sample document
             content = sample_document.read_text()
-            entities = kg_builder.extract_entities_from_text(content, str(sample_document))
+            entities, relationships = kg_builder.extract_entities_from_text(content, str(sample_document))
             
             for entity in entities:
                 kg.add_entity(entity)
+            
+            for relationship in relationships:
+                kg.add_relationship(relationship)
             
             # Verify entities were extracted and added
             stats = kg.get_statistics()
