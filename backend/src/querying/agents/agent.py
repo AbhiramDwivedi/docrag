@@ -159,6 +159,30 @@ class Agent:
             "pdf", "pptx", "docx", "xlsx", "msg", "txt"
         ]
         
+        # Document-level query keywords (NEW)
+        document_level_keywords = [
+            "document", "documents", "file", "files", "source", "sources",
+            "from the", "according to", "in the document", "the document says",
+            "as mentioned in", "referenced in", "cited in", "from document",
+            "which document", "what document", "document contains", "document about",
+            "full document", "entire document", "complete document", "whole document"
+        ]
+        
+        # Cross-document analysis keywords (NEW)  
+        cross_document_keywords = [
+            "across documents", "multiple documents", "different documents", 
+            "all documents", "various documents", "between documents",
+            "compare documents", "contrast documents", "documents mention",
+            "throughout", "across all", "in various", "different sources"
+        ]
+        
+        # Comprehensive analysis keywords (NEW)
+        comprehensive_keywords = [
+            "comprehensive", "detailed", "thorough", "complete", "full analysis",
+            "in depth", "extensive", "elaborate", "exhaustive", "all information",
+            "everything about", "all details", "complete overview", "full picture"
+        ]
+        
         # Phase III relationship analysis keywords
         relationship_keywords = [
             "similar", "related", "relationship", "connection", "linked",
@@ -187,6 +211,15 @@ class Agent:
         # Check for reporting queries
         has_reporting_indicators = any(keyword in question_lower for keyword in reporting_keywords)
         
+        # Check for document-level queries (NEW)
+        has_document_level_indicators = any(keyword in question_lower for keyword in document_level_keywords)
+        
+        # Check for cross-document analysis queries (NEW)
+        has_cross_document_indicators = any(keyword in question_lower for keyword in cross_document_keywords)
+        
+        # Check for comprehensive analysis queries (NEW)
+        has_comprehensive_indicators = any(keyword in question_lower for keyword in comprehensive_keywords)
+        
         # Multi-step query detection - queries that might need multiple plugins
         multi_step_patterns = [
             "latest email about",
@@ -202,7 +235,10 @@ class Agent:
         is_multi_step = any(re.search(pattern, question_lower) for pattern in multi_step_patterns)
         
         # Log classification analysis
-        classification_logger.debug(f"Query analysis - email: {has_email_indicators}, metadata: {has_metadata_indicators}, relationships: {has_relationship_indicators}, reporting: {has_reporting_indicators}, multi-step: {is_multi_step}")
+        classification_logger.debug(f"Query analysis - email: {has_email_indicators}, metadata: {has_metadata_indicators}, "
+                                   f"relationships: {has_relationship_indicators}, reporting: {has_reporting_indicators}, "
+                                   f"document_level: {has_document_level_indicators}, cross_document: {has_cross_document_indicators}, "
+                                   f"comprehensive: {has_comprehensive_indicators}, multi-step: {is_multi_step}")
         
         # Phase III enhanced classification logic
         if has_reporting_indicators:
@@ -239,6 +275,37 @@ class Agent:
                 plugins_to_use.append("metadata")
                 self._reasoning_trace.append("Detected metadata query keywords")
                 classification_logger.info("Classified as metadata query")
+        
+        # Enhanced document-level and cross-document classification (NEW)
+        if has_cross_document_indicators or has_comprehensive_indicators:
+            # Cross-document or comprehensive queries benefit from multiple plugins
+            if has_relationship_indicators and self.registry.get_plugin("document_relationships"):
+                if "document_relationships" not in plugins_to_use:
+                    plugins_to_use.append("document_relationships")
+                    self._reasoning_trace.append("Added document relationships for cross-document analysis")
+                    classification_logger.info("Added document relationships for cross-document query")
+            
+            # Always use semantic search for cross-document queries with enhanced parameters
+            if self.registry.get_plugin("semantic_search"):
+                if "semantic_search" not in plugins_to_use:
+                    plugins_to_use.append("semantic_search")
+                    self._reasoning_trace.append("Added semantic search for cross-document analysis")
+                    classification_logger.info("Added semantic search for cross-document query")
+            
+            # Add metadata for document discovery if relevant
+            if any(word in question.lower() for word in ["which documents", "what files", "list documents"]):
+                if self.registry.get_plugin("metadata") and "metadata" not in plugins_to_use:
+                    plugins_to_use.append("metadata")
+                    self._reasoning_trace.append("Added metadata for document discovery")
+                    classification_logger.info("Added metadata for document discovery")
+        
+        elif has_document_level_indicators:
+            # Document-level queries that ask about specific documents or source attribution
+            if self.registry.get_plugin("semantic_search"):
+                if "semantic_search" not in plugins_to_use:
+                    plugins_to_use.append("semantic_search")
+                    self._reasoning_trace.append("Added semantic search for document-level query")
+                    classification_logger.info("Added semantic search for document-level query")
         
         # Check for semantic search queries
         content_keywords = [
@@ -316,7 +383,7 @@ class Agent:
         return plugins_to_use
     
     def _prepare_params(self, plugin_name: str, question: str) -> Dict[str, Any]:
-        """Prepare parameters for plugin execution with Phase III enhancements.
+        """Prepare parameters for plugin execution with enhanced document-level support.
         
         Args:
             plugin_name: Name of the plugin to prepare parameters for
@@ -342,11 +409,95 @@ class Agent:
             # Generate parameters for knowledge graph operations
             return self._generate_kg_params(question)
         
+        elif plugin_name == "semantic_search":
+            # Enhanced parameters for semantic search with document-level analysis
+            return self._generate_semantic_search_params(question)
+        
         # Basic parameters for other plugins
         params = {
             "question": question,
             "query": question,  # Alias for compatibility
         }
+        
+        return params
+    
+    def _generate_semantic_search_params(self, question: str) -> Dict[str, Any]:
+        """Generate enhanced parameters for semantic search plugin.
+        
+        Args:
+            question: Natural language question
+            
+        Returns:
+            Dictionary of parameters optimized for the query type
+        """
+        question_lower = question.lower()
+        
+        # Base parameters
+        params = {
+            "question": question,
+            "use_document_level": True,  # Enable document-level retrieval by default
+            "k": 50,  # Increased for document-level analysis
+            "max_documents": 5,
+            "context_window": 3
+        }
+        
+        # Adjust parameters based on query characteristics
+        
+        # Complex analytical queries need more documents and context
+        if any(word in question_lower for word in [
+            "analyze", "compare", "relationship", "across", "between", "comprehensive",
+            "detailed", "thorough", "explain", "describe", "overview"
+        ]):
+            params["max_documents"] = 7
+            params["context_window"] = 5
+            params["k"] = 75
+            self._reasoning_trace.append("Using expanded search parameters for analytical query")
+        
+        # Simple factual queries can use focused search
+        elif any(word in question_lower for word in [
+            "what is", "when", "where", "who", "quick", "brief", "simple"
+        ]):
+            params["max_documents"] = 3
+            params["context_window"] = 2
+            params["k"] = 30
+            self._reasoning_trace.append("Using focused search parameters for factual query")
+        
+        # Multi-document queries need broader search
+        elif any(word in question_lower for word in [
+            "all", "every", "across documents", "in all", "throughout", "multiple",
+            "various", "different documents", "all files"
+        ]):
+            params["max_documents"] = 10
+            params["context_window"] = 4
+            params["k"] = 100
+            self._reasoning_trace.append("Using broad search parameters for multi-document query")
+        
+        # Technical/detailed queries need more context
+        elif any(word in question_lower for word in [
+            "implementation", "technical", "specifications", "requirements", "details",
+            "procedure", "process", "methodology", "architecture", "design"
+        ]):
+            params["max_documents"] = 6
+            params["context_window"] = 4
+            params["k"] = 60
+            self._reasoning_trace.append("Using detailed search parameters for technical query")
+        
+        # Recent/temporal queries might benefit from more documents to find latest info
+        elif any(word in question_lower for word in [
+            "recent", "latest", "new", "updated", "current", "now", "today",
+            "this week", "this month", "recently"
+        ]):
+            params["max_documents"] = 8
+            params["context_window"] = 3
+            params["k"] = 70
+            self._reasoning_trace.append("Using expanded search for temporal query")
+        
+        # Check if user is asking for legacy-style response
+        if any(phrase in question_lower for phrase in [
+            "quick answer", "just tell me", "simple answer", "briefly"
+        ]):
+            params["use_document_level"] = False
+            self._reasoning_trace.append("Using legacy mode for simple query")
         
         return params
     
