@@ -64,10 +64,19 @@ class VectorStore:
             ])
             
             if not has_enhanced_schema:
-                # Need to migrate - just create table with basic schema for now
-                # Migration will be handled separately
+                # Add missing faiss_idx column if needed
                 if 'faiss_idx' not in existing_columns:
-                    cur.execute("ALTER TABLE chunks ADD COLUMN faiss_idx INTEGER")
+                    try:
+                        cur.execute("ALTER TABLE chunks ADD COLUMN faiss_idx INTEGER")
+                    except sqlite3.OperationalError:
+                        pass  # Column might already exist
+                
+                # Run migration to add enhanced columns
+                try:
+                    self.migrate_database_schema()
+                except Exception as e:
+                    print(f"Warning: Migration failed: {e}")
+                
                 self.conn.commit()
                 return
         
@@ -112,8 +121,8 @@ class VectorStore:
             elif len(row) == 13:
                 # New format: (id, file, unit, text, mtime, current, document_id, document_path, 
                 #             document_title, section_id, chunk_index, total_chunks, document_type)
-                # Add FAISS index
-                extended_row = row + (current_size + i,)
+                # Insert with FAISS index in the correct position (after current, before document_id)
+                extended_row = row[:6] + (current_size + i,) + row[6:]
                 cur.execute("REPLACE INTO chunks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", extended_row)
             else:
                 raise ValueError(f"Invalid metadata row length: {len(row)}. Expected 6 or 13 fields.")
