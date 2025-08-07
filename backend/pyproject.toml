@@ -1,0 +1,94 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "docquest"
+version = "0.1.0"
+description = "Local RAG-based document search and querying system"
+readme = "../README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "Abhiram Dwivedi"}
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+requires-python = ">=3.11"
+dependencies = [
+    # Core dependencies
+    "watchdog",
+    "unstructured",
+    "sentence-transformers",
+    "faiss-cpu",
+    "fastapi",
+    "uvicorn[standard]",
+    "pydantic",
+    "PyMuPDF",
+    "python-docx",
+    "python-pptx",
+    "extract-msg",
+    "beautifulsoup4",
+    "pandas",
+    "rich",
+    "pyyaml",
+    # LangChain for advanced PDF processing
+    "langchain",
+    "langchain-community",
+    "langchain-openai",
+    "langchain-unstructured",
+    # Image processing and OCR
+    "pytesseract",
+    "pillow",
+    "pdf2image",
+    # OpenAI for image analysis
+    "openai",
+    # Phase III dependencies
+    "networkx>=2.8",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "pytest-mock",
+]
+
+[project.urls]
+Homepage = "https://github.com/AbhiramDwivedi/docrag"
+Repository = "https://github.com/AbhiramDwivedi/docrag"
+Issues = "https://github.com/AbhiramDwivedi/docrag/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["*"]
+
+[tool.setuptools.package-dir]
+"" = "src"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+
+[tool.coverage.run]
+source = ["src"]
+omit = [
+    "*/tests/*",
+    "*/test_*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+]
