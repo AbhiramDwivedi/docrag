@@ -85,8 +85,8 @@ def main():
     
     store = EnhancedVectorStore(Path(settings.vector_path), Path(settings.db_path), dim=384)
     
-    # Initialize knowledge graph (mandatory)
-    kg_path = Path("data/knowledge_graph.db")
+    # Initialize knowledge graph using resolved path from configuration
+    kg_path = settings.resolve_storage_path(settings.knowledge_graph_path)
     kg = KnowledgeGraph(str(kg_path))
     print("🧠 Knowledge graph initialized")
     

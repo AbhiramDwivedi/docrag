@@ -11,6 +11,7 @@ class Settings(BaseModel):
     sync_root: Path = Field(default=Path.home() / "Documents", description="Local document folder to watch and index")
     db_path: Path = Field(default=Path("data/docmeta.db"))
     vector_path: Path = Field(default=Path("data/vector.index"))
+    knowledge_graph_path: Path = Field(default=Path("data/knowledge_graph.db"))
     chunk_size: int = 800
     overlap: int = 150
     embed_model: str = "sentence-transformers/all-MiniLM-L6-v2"
@@ -24,6 +25,24 @@ class Settings(BaseModel):
         if isinstance(v, str):
             return Path(v).expanduser().resolve()
         return v
+
+    def resolve_storage_path(self, path: Path) -> Path:
+        """Resolve storage paths to absolute, create directories if needed.
+        
+        Args:
+            path: Storage path (relative or absolute)
+            
+        Returns:
+            Resolved absolute path with directories created
+        """
+        if path.is_absolute():
+            resolved = path
+        else:
+            resolved = Path.cwd() / path
+        
+        # Create parent directories if they don't exist
+        resolved.parent.mkdir(parents=True, exist_ok=True)
+        return resolved
 
 def load_settings(overrides: Optional[Dict[str, Any]] = None) -> Settings:
     data: Dict[str, Any] = {}

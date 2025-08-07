@@ -23,8 +23,11 @@ def get_data_dir() -> Path:
 
 def get_default_paths() -> Dict[str, str]:
     """Get default file paths for DocQuest data."""
+    from shared.config import get_settings
+    settings = get_settings()
+    
     return {
-        "vector_path": "data/vector.index",
-        "db_path": "data/docmeta.db",
-        "knowledge_graph_path": "data/knowledge_graph.db"
+        "vector_path": str(settings.vector_path),
+        "db_path": str(settings.db_path),
+        "knowledge_graph_path": str(settings.knowledge_graph_path)
     }

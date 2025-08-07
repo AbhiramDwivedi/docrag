@@ -1,6 +1,7 @@
 sync_root: "~/Documents/MyDocuments"
 db_path: "data/docmeta.db"
 vector_path: "data/vector.index"
+knowledge_graph_path: "data/knowledge_graph.db"
 chunk_size: 800
 overlap: 150
 embed_model: "sentence-transformers/all-MiniLM-L6-v2"

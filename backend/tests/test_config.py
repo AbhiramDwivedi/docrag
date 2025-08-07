@@ -7,8 +7,8 @@ from pathlib import Path
 print("=== Configuration Validation Test ===")
 
 try:
-    config = yaml.safe_load(Path('shared/config.yaml.template').read_text())
-    required_keys = ['sync_root', 'db_path', 'vector_path', 'embed_model', 'openai_api_key']
+    config = yaml.safe_load(Path('src/shared/config.yaml.template').read_text())
+    required_keys = ['sync_root', 'db_path', 'vector_path', 'knowledge_graph_path', 'embed_model', 'openai_api_key']
     
     for key in required_keys:
         assert key in config, f'Missing required config key: {key}'

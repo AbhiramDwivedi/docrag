@@ -54,27 +54,26 @@ class KnowledgeGraphPlugin(Plugin):
         try:
             # Initialize knowledge graph if needed
             if self._knowledge_graph is None:
-                # Check for demo KG first, then default location
+                # Get knowledge graph path from configuration
+                kg_path = settings.resolve_storage_path(settings.knowledge_graph_path)
+                
+                # Check for demo KG first, then configured location
                 kg_paths = [
-                    Path("data/demo_knowledge_graph.db"),
-                    Path("data/knowledge_graph.db")
+                    Path("data/demo_knowledge_graph.db"),  # Demo KG for testing
+                    kg_path  # Configured location
                 ]
                 
-                kg_path = None
+                kg_path_to_use = None
                 for path in kg_paths:
                     if path.exists():
-                        kg_path = path
+                        kg_path_to_use = path
                         break
                 
-                if kg_path is None:
-                    return {
-                        "results": "Knowledge graph database not found. Please run document ingestion first.",
-                        "entities": [],
-                        "relationships": [],
-                        "metadata": {"error": "kg_not_found"}
-                    }
-                    
-                self._knowledge_graph = KnowledgeGraph(str(kg_path))
+                # If neither exists, use the configured location (will be created)
+                if kg_path_to_use is None:
+                    kg_path_to_use = kg_path
+                
+                self._knowledge_graph = KnowledgeGraph(str(kg_path_to_use))
             
             if operation == "find_entities":
                 return self._find_entities(params)
