@@ -112,12 +112,13 @@ def test_utils_get_default_paths_uses_config():
         vector_path=Path("custom/vector.index")
     )
     
-    with patch('shared.utils.get_settings', return_value=custom_settings):
+    with patch('shared.config.get_settings', return_value=custom_settings):
         paths = get_default_paths()
         
-        assert paths["knowledge_graph_path"] == "custom/kg.db"
-        assert paths["db_path"] == "custom/db.db"
-        assert paths["vector_path"] == "custom/vector.index"
+        # Convert to Path objects to handle Windows/Unix path differences
+        assert Path(paths["knowledge_graph_path"]) == Path("custom/kg.db")
+        assert Path(paths["db_path"]) == Path("custom/db.db")
+        assert Path(paths["vector_path"]) == Path("custom/vector.index")
     
     print("✅ Utils get_default_paths uses config test passed")
 

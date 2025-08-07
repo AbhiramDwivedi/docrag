@@ -92,6 +92,16 @@ The goal of this repo is to build **DocQuest** - a local RAG pipeline that quest
 
 ---
 
+## CI Validation Requirements
+
+- **ALWAYS run and validate CI checks before creating pull requests**
+- Check GitHub Actions status on branch before submitting PR
+- Fix any failing tests, linting errors, or build issues
+- Only create PRs with green CI status
+- Include CI status verification in PR description
+
+---
+
 ## Paths to ignore
 
 Copilot should **never edit or propose changes** to data artifacts:
