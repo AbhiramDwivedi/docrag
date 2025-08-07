@@ -20,7 +20,9 @@ python -m venv .venv
 # source .venv/bin/activate  # macOS/Linux
 
 # 2. Install dependencies
+cd backend
 pip install -r requirements.txt
+cd ..
 
 # 3. Create your config file
 copy config\config.yaml.template config\config.yaml  # Windows
@@ -77,7 +79,8 @@ python -m backend.src.querying.api
 │   └── PDF_PROCESSING.md # LangChain + AI PDF processing
 ├── examples/             # Example scripts and demos
 ├── watcher/              # File system monitoring
-└── requirements.txt      # Dependencies
+└── backend/
+    └── requirements.txt  # Dependencies
 ```
 
 [📊 View detailed system architecture →](docs/ARCHITECTURE.md)
