@@ -2,20 +2,21 @@
 import argparse
 import sys
 from pathlib import Path
+from datetime import datetime
 
-# Add backend root to path for absolute imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+# Add backend src to path for absolute imports  
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from ingestion.extractors import extract_text
+from ingestion.extractors import extract_text, set_all_sheets_mode
 from ingestion.processors.chunker import chunk_text
 from ingestion.processors.embedder import embed_texts
-from ingestion.storage.vector_store import VectorStore
+from ingestion.storage.enhanced_vector_store import EnhancedVectorStore
 from shared.config import settings
 from shared.utils import get_file_hash
 from rich.progress import track
 
 
-def process_file(path: Path, store: VectorStore):
+def process_file(path: Path, store: EnhancedVectorStore):
     file_id = get_file_hash(path)
     units = extract_text(path)
     all_chunks, texts, meta = [], [], []
@@ -29,7 +30,24 @@ def process_file(path: Path, store: VectorStore):
     if not texts:
         return
     vectors = embed_texts(texts, settings.embed_model)
-    store.upsert([c['id'] for c in all_chunks], vectors, meta)
+    
+    # Collect file metadata for enhanced storage
+    file_stat = path.stat()
+    file_metadata = {
+        'file_path': str(path),
+        'file_name': path.name,
+        'file_extension': path.suffix.lower(),
+        'file_size': file_stat.st_size,
+        'created_time': file_stat.st_ctime,
+        'modified_time': file_stat.st_mtime,
+        'accessed_time': file_stat.st_atime,
+        'file_type': path.suffix.upper().lstrip('.'),  # PDF, DOCX, etc.
+        'chunk_count': len(all_chunks),
+        'ingestion_time': datetime.now().timestamp()
+    }
+    
+    # Use enhanced upsert with metadata
+    store.upsert_with_metadata([c['id'] for c in all_chunks], vectors, meta, file_metadata)
 
 
 def main():
@@ -45,7 +63,7 @@ def main():
         set_all_sheets_mode(True)
         print("🔄 ALL-SHEETS MODE enabled: Will process all Excel sheets")
     
-    store = VectorStore(Path(settings.vector_path), Path(settings.db_path), dim=384)
+    store = EnhancedVectorStore(Path(settings.vector_path), Path(settings.db_path), dim=384)
     
     # Get all files or filter by type
     if args.file_type:

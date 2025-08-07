@@ -14,7 +14,7 @@ from .base import BaseExtractor, Unit
 from .pdf_extractor import PDFExtractor
 from .docx_extractor import DOCXExtractor
 from .pptx_extractor import PPTXExtractor
-from .xlsx_simple_extractor import XLSXExtractor
+from .xlsx_simple_extractor import XLSXExtractor, set_all_sheets_mode
 from .txt_extractor import TXTExtractor
 from .email_extractor import EmailExtractor
 
@@ -76,5 +76,6 @@ __all__ = [
     'get_extractor',
     'get_supported_extensions',
     'extract_text',
+    'set_all_sheets_mode',
     'EXTRACTORS'
 ]

@@ -5,11 +5,25 @@ Features:
 - Basic multi-sheet processing
 - Simple text conversion
 - Error-resistant design
+- Configurable sheet limit (default 15, can be disabled)
 """
 from pathlib import Path
-from typing import List, Any
+from typing import List, Any, Optional
 
 from .base import BaseExtractor, Unit
+
+# Global variable to control sheet processing limit
+_MAX_SHEETS = 15
+_all_sheets_mode = False
+
+def set_all_sheets_mode(enabled: bool = True):
+    """Enable or disable processing of all sheets (removes 15-sheet limit)."""
+    global _all_sheets_mode
+    _all_sheets_mode = enabled
+
+def get_max_sheets() -> Optional[int]:
+    """Get the current maximum number of sheets to process."""
+    return None if _all_sheets_mode else _MAX_SHEETS
 
 
 class XLSXExtractor(BaseExtractor):
@@ -29,11 +43,18 @@ class XLSXExtractor(BaseExtractor):
             # Get all sheet names
             excel_file = pd.ExcelFile(path)
             all_sheets = excel_file.sheet_names
-            print(f"   Found {len(all_sheets)} sheets")
+            max_sheets = get_max_sheets()
+            
+            if max_sheets and len(all_sheets) > max_sheets:
+                print(f"   Found {len(all_sheets)} sheets, limiting to first {max_sheets} (use --all-sheets to process all)")
+                sheets_to_process = all_sheets[:max_sheets]
+            else:
+                print(f"   Found {len(all_sheets)} sheets")
+                sheets_to_process = all_sheets
             
             units: List[Unit] = []
             
-            for sheet_name in all_sheets:
+            for sheet_name in sheets_to_process:
                 try:
                     # Read the sheet
                     df = pd.read_excel(path, sheet_name=sheet_name)
