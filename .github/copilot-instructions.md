@@ -23,15 +23,16 @@ The goal of this repo is to build **DocQuest** - a local RAG pipeline that quest
    * **All demo files must be placed in the `backend/examples/` directory only**—never create demo files in the root directory.
    * Demo file naming: `demo_<feature_name>.py` (e.g., `backend/examples/demo_knowledge_graph.py`)
    * Demo files should include clear docstrings explaining their purpose and usage
-4. **Demo Files**  
-   * **All demo files must be placed in the `backend/examples/` directory only**—never create demo files in the root directory.
-   * Demo file naming: `demo_<feature_name>.py` (e.g., `backend/examples/demo_knowledge_graph.py`)
-   * Demo files should include clear docstrings explaining their purpose and usage
 5. **Dependencies**  
    * Keep requirements minimal—if the task can be done with the stdlib or an existing listed package, avoid new libs.  
    * For embeddings, default to **`sentence‑transformers/all‑MiniLM‑L6‑v2`** unless a task explicitly calls for OpenAI embeddings.
 6. **Comments & TODOs**  
    * Leave `# TODO:` markers for incomplete sections; never commit unfinished code without a TODO.  
+7. **Commit Messages**  
+   * **Keep commit titles short and descriptive** (≤50 characters when possible).  
+   * **Use the commit description** for detailed explanations, bullet points, and context.  
+   * Follow conventional commits format: `type: short description` (e.g., `fix: resolve CI test failures`, `feat: add knowledge graph plugin`).  
+   * Put implementation details, file changes, and rationale in the commit description, not the title.
 
 ---
 
