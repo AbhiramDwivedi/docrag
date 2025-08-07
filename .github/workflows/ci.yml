@@ -22,30 +22,46 @@ jobs:
         python-version: ${{ matrix.python-version }}
     
     - name: Install dependencies
+      working-directory: backend
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
+        pip install pyyaml  # Ensure yaml is available
     
     - name: Check import structure
+      working-directory: backend
       run: |
-        python -c "from backend.shared.config import get_settings; print('✅ Config module imports correctly')"
-        python -c "from backend.ingestion.extractors import get_extractor; print('✅ Extractor module imports correctly')"
-        python -c "from backend.ingestion.storage.vector_store import VectorStore; print('✅ Vector store module imports correctly')"
-        python -c "from interface.cli.ask import answer; print('✅ CLI module imports correctly')"
+        export PYTHONPATH="${PYTHONPATH}:./src"
+        python -c "
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path('./src')))
+        
+        from shared.config import get_settings
+        print('✅ Config module imports correctly')
+        
+        from querying.agents.agent import Agent
+        print('✅ Agent module imports correctly')
+        
+        from ingestion.storage.vector_store import VectorStore
+        print('✅ Vector store module imports correctly')
+        "
     
     - name: Validate configuration template
+      working-directory: backend
       run: |
         python -c "
         import yaml
         from pathlib import Path
-        config = yaml.safe_load(Path('backend/shared/config.yaml.template').read_text())
+        config = yaml.safe_load(Path('src/shared/config.yaml.template').read_text())
         required_keys = ['sync_root', 'db_path', 'vector_path', 'embed_model', 'openai_api_key']
         for key in required_keys:
             assert key in config, f'Missing required config key: {key}'
         print('✅ Configuration template is valid')
         "
     
-    - name: Test setup script
+    - name: Run tests
+      working-directory: backend
       run: |
-        python setup.py
-        echo "✅ Post-clone setup script runs successfully"
+        export PYTHONPATH="${PYTHONPATH}:./src"
+        python -m pytest tests/ -v --tb=short
