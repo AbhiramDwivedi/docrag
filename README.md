@@ -21,7 +21,7 @@ python -m venv .venv
 
 # 2. Install dependencies
 cd backend
-pip install -r requirements.txt
+pip install -e .
 cd ..
 
 # 3. Create your config file
@@ -42,6 +42,26 @@ python -m backend.src.interface.cli.ask "What documents are available?"
 # 7. Start web API (optional)
 python -m backend.src.querying.api
 ```
+
+## 📦 Installation Options
+
+### Option 1: Modern Installation (Recommended)
+```bash
+# Install in development mode using pyproject.toml
+cd backend
+pip install -e .
+```
+
+### Option 2: Traditional Installation
+```bash
+# Install dependencies only using requirements.txt
+cd backend
+pip install -r requirements.txt
+```
+
+Both options install the same dependencies. The modern approach using `pyproject.toml` is recommended for development as it installs the package in editable mode.
+
+> **Note**: After cloning, you can run `python backend/setup_project.py` to automatically create config files and directories.
 
 ## 📁 Project Structure
 
