@@ -11,24 +11,43 @@ from ingestion.extractors import extract_text, set_all_sheets_mode
 from ingestion.processors.chunker import chunk_text
 from ingestion.processors.embedder import embed_texts
 from ingestion.storage.enhanced_vector_store import EnhancedVectorStore
+from ingestion.storage.knowledge_graph import KnowledgeGraph, KnowledgeGraphBuilder
 from shared.config import settings
 from shared.utils import get_file_hash
 from rich.progress import track
 
 
-def process_file(path: Path, store: EnhancedVectorStore):
+def process_file(path: Path, store: EnhancedVectorStore, kg: KnowledgeGraph = None):
     file_id = get_file_hash(path)
     units = extract_text(path)
     all_chunks, texts, meta = [], [], []
+    
+    # Collect all text content for knowledge graph processing
+    full_text = ""
+    
     for unit_id, text in units:
+        full_text += f"\n{text}"  # Accumulate text for entity extraction
         chunks = chunk_text(text, file_id, unit_id,
                             settings.chunk_size, settings.overlap)
         for ch in chunks:
             all_chunks.append(ch)
             texts.append(ch['text'])
             meta.append((ch['id'], str(path), unit_id, ch['text'], path.stat().st_mtime, 1))
+    
     if not texts:
         return
+    
+    # Extract entities for knowledge graph if available
+    if kg is not None:
+        try:
+            kg_builder = KnowledgeGraphBuilder(kg)
+            entities = kg_builder.extract_entities_from_text(full_text, str(path))
+            for entity in entities:
+                kg.add_entity(entity)
+        except Exception as e:
+            # Don't fail the entire pipeline if KG extraction fails
+            print(f"⚠️ Knowledge graph extraction failed for {path.name}: {e}")
+    
     vectors = embed_texts(texts, settings.embed_model)
     
     # Collect file metadata for enhanced storage
@@ -56,6 +75,7 @@ def main():
     parser.add_argument('--file-type', help='Process only specific file types (e.g., xlsx, pdf, docx)')
     parser.add_argument('--target', help='Process specific file by name (for --all-sheets option)')
     parser.add_argument('--all-sheets', action='store_true', help='Process ALL sheets in Excel files (removes 15-sheet limit)')
+    parser.add_argument('--skip-kg', action='store_true', help='Skip knowledge graph processing (for backward compatibility)')
     args = parser.parse_args()
     
     # Set all-sheets mode if requested
@@ -64,6 +84,17 @@ def main():
         print("🔄 ALL-SHEETS MODE enabled: Will process all Excel sheets")
     
     store = EnhancedVectorStore(Path(settings.vector_path), Path(settings.db_path), dim=384)
+    
+    # Initialize knowledge graph unless skipped
+    kg = None
+    if not args.skip_kg:
+        try:
+            kg_path = Path("data/knowledge_graph.db")
+            kg = KnowledgeGraph(str(kg_path))
+            print("🧠 Knowledge graph initialized")
+        except Exception as e:
+            print(f"⚠️ Failed to initialize knowledge graph: {e}")
+            print("📄 Continuing with vector-only processing")
     
     # Get all files or filter by type
     if args.file_type:
@@ -87,11 +118,24 @@ def main():
         if '~$' in file.name:
             continue
         try:
-            process_file(file, store)
+            process_file(file, store, kg)
             processed_count += 1
         except Exception as e:
             print(f"❌ Failed to process {file.name}: {e}")
             failed_count += 1
+    
+    # Print knowledge graph statistics if available
+    if kg:
+        try:
+            stats = kg.get_statistics()
+            print(f"\n🧠 Knowledge Graph Stats:")
+            print(f"   📊 Total entities: {stats.get('total_entities', 0)}")
+            print(f"   🔗 Total relationships: {stats.get('total_relationships', 0)}")
+            entity_types = stats.get('entity_types', {})
+            if entity_types:
+                print(f"   📋 Entity types: {dict(entity_types)}")
+        except Exception as e:
+            print(f"⚠️ Failed to get knowledge graph stats: {e}")
     
     print(f"\n✅ Processing complete: {processed_count} files processed, {failed_count} failed")
 
