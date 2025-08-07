@@ -2,6 +2,7 @@
 End-to-end test to verify knowledge graph implementation works correctly
 """
 
+import os
 import subprocess
 import sys
 from pathlib import Path
