@@ -19,10 +19,18 @@ The goal of this repo is to build **DocQuest** - a local RAG pipeline that quest
    * Use `pytest‑tmpdir` or `tmp_path` fixtures instead of real document data.
    * Test file naming: `test_<module_name>.py` (e.g., `backend/tests/test_extractor.py`)
    * Test resources should be placed in `backend/tests/resources/`
-4. **Dependencies**  
+4. **Demo Files**  
+   * **All demo files must be placed in the `backend/examples/` directory only**—never create demo files in the root directory.
+   * Demo file naming: `demo_<feature_name>.py` (e.g., `backend/examples/demo_knowledge_graph.py`)
+   * Demo files should include clear docstrings explaining their purpose and usage
+4. **Demo Files**  
+   * **All demo files must be placed in the `backend/examples/` directory only**—never create demo files in the root directory.
+   * Demo file naming: `demo_<feature_name>.py` (e.g., `backend/examples/demo_knowledge_graph.py`)
+   * Demo files should include clear docstrings explaining their purpose and usage
+5. **Dependencies**  
    * Keep requirements minimal—if the task can be done with the stdlib or an existing listed package, avoid new libs.  
    * For embeddings, default to **`sentence‑transformers/all‑MiniLM‑L6‑v2`** unless a task explicitly calls for OpenAI embeddings.
-5. **Comments & TODOs**  
+6. **Comments & TODOs**  
    * Leave `# TODO:` markers for incomplete sections; never commit unfinished code without a TODO.  
 
 ---
