@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "docquest"
 version = "0.1.0"
 description = "Local RAG-based document search and querying system"
-readme = "../README.md"
+readme = "README.md"
 license = {text = "MIT"}
 authors = [
     {name = "Abhiram Dwivedi"}
