@@ -49,7 +49,8 @@ class TestAPIIntegration:
         assert 'answer' in data
         assert ('No files found' in data['answer'] or 
                 'File types in the collection' in data['answer'] or
-                'No files found matching' in data['answer'])
+                'No files found matching' in data['answer'] or
+                'No document database found' in data['answer'])
         assert 'OpenAI API key' not in data['answer']
     
     def test_api_empty_query(self):

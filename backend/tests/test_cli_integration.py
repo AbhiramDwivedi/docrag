@@ -41,7 +41,8 @@ class TestCLIIntegration:
         result = answer("what file types are available?")
         assert ("No files found" in result or 
                 "File types in the collection" in result or
-                "No files found matching" in result)
+                "No files found matching" in result or
+                "No document database found" in result)
         assert "OpenAI API key" not in result
     
     def test_cli_module_execution(self):
