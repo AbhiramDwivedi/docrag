@@ -25,7 +25,7 @@ jobs:
       working-directory: backend
       run: |
         python -m pip install --upgrade pip
-        pip install -e .  # Modern installation using pyproject.toml
+        pip install -e .[dev]  # Install with dev dependencies including pytest
         pip install pyyaml  # Ensure yaml is available
     
     - name: Check import structure
