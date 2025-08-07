@@ -117,4 +117,4 @@ data/**
 
 ---
 
-Follow these instructions **unless a pull‑request discussion explicitly overrides them**.
+Follow these instructions as the baseline, incorporating feedback and requirements from pull request discussions and code reviews.
