@@ -1,4 +1,4 @@
-from ingestion.storage.enhanced_vector_store import EnhancedVectorStore
+from ingestion.storage.vector_store import VectorStore
 from pathlib import Path
 
 # Test enhanced vector store migration
@@ -6,7 +6,7 @@ try:
     print("Testing Enhanced Vector Store migration...")
     
     # Load enhanced vector store with existing data
-    enhanced_store = EnhancedVectorStore.load(
+    enhanced_store = VectorStore.load(
         Path("data/vector.index"),
         Path("data/enhanced_vector_store.db"),
         dim=384

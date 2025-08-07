@@ -9,7 +9,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from ingestion.pipeline import process_file
-from ingestion.storage.enhanced_vector_store import EnhancedVectorStore
+from ingestion.storage.vector_store import VectorStore
 from ingestion.storage.knowledge_graph import KnowledgeGraph, KnowledgeGraphBuilder, Entity
 from querying.agents.plugins.knowledge_graph import KnowledgeGraphPlugin
 
@@ -113,7 +113,7 @@ class TestKnowledgeGraphIntegration:
         # Skip this test if we can't load embedding models (no internet)
         try:
             # Create stores
-            store = EnhancedVectorStore(vector_path, meta_path, dim=384)
+            store = VectorStore(vector_path, meta_path, dim=384)
             kg = KnowledgeGraph(str(kg_path))
             
             # This would normally process the file, but will fail due to embedding model
@@ -250,7 +250,7 @@ class TestKnowledgeGraphIntegration:
         
         # Test process_file function with kg=None (skip knowledge graph)
         try:
-            store = EnhancedVectorStore(vector_path, meta_path, dim=384)
+            store = VectorStore(vector_path, meta_path, dim=384)
             
             # This should work without errors even when kg=None
             # But will fail on embedding, which is fine for this test
