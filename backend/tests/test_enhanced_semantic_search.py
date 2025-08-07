@@ -6,7 +6,7 @@ from unittest.mock import Mock, patch
 import sys
 
 # Add backend src to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 
 class MockEnhancedVectorStore:
@@ -139,6 +139,11 @@ class MockOpenAIClient:
     
     def __init__(self, api_key):
         self.api_key = api_key
+        self.chat = self.Chat()
+        
+    class Chat:
+        def __init__(self):
+            self.completions = MockOpenAIClient.ChatCompletions()
         
     class ChatCompletions:
         def create(self, **kwargs):
@@ -161,10 +166,6 @@ class MockOpenAIClient:
                         self.content = "This is a mock response based on the provided context."
             
             return MockResponse()
-    
-    @property
-    def chat(self):
-        return MockOpenAIClient.ChatCompletions()
 
 
 def test_enhanced_semantic_search():

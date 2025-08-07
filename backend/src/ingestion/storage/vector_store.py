@@ -47,6 +47,31 @@ class VectorStore:
     def _init_db(self):
         self.conn = sqlite3.connect(self.db_path)
         cur = self.conn.cursor()
+        
+        # Check if chunks table exists and get its current schema
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='chunks'")
+        table_exists = cur.fetchone() is not None
+        
+        if table_exists:
+            # Get current columns
+            cur.execute("PRAGMA table_info(chunks)")
+            existing_columns = [col[1] for col in cur.fetchall()]
+            
+            # Check if we have the new enhanced schema
+            has_enhanced_schema = all(col in existing_columns for col in [
+                'document_id', 'document_path', 'document_title', 
+                'section_id', 'chunk_index', 'total_chunks', 'document_type'
+            ])
+            
+            if not has_enhanced_schema:
+                # Need to migrate - just create table with basic schema for now
+                # Migration will be handled separately
+                if 'faiss_idx' not in existing_columns:
+                    cur.execute("ALTER TABLE chunks ADD COLUMN faiss_idx INTEGER")
+                self.conn.commit()
+                return
+        
+        # Create new table with enhanced schema
         cur.execute("""CREATE TABLE IF NOT EXISTS chunks
                        (id TEXT PRIMARY KEY, file TEXT, unit TEXT,
                         text TEXT, mtime REAL, current INTEGER, faiss_idx INTEGER,
@@ -54,11 +79,15 @@ class VectorStore:
                         section_id TEXT, chunk_index INTEGER, total_chunks INTEGER,
                         document_type TEXT)""")
         
-        # Add indexes for efficient document-level queries
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_chunks_document_id ON chunks (document_id)")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_chunks_document_path ON chunks (document_path)")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_chunks_document_type ON chunks (document_type)")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_chunks_chunk_index ON chunks (chunk_index)")
+        # Add indexes for efficient document-level queries (only if columns exist)
+        try:
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_chunks_document_id ON chunks (document_id)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_chunks_document_path ON chunks (document_path)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_chunks_document_type ON chunks (document_type)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_chunks_chunk_index ON chunks (chunk_index)")
+        except sqlite3.OperationalError:
+            # Columns might not exist yet - indexes will be created during migration
+            pass
         
         self.conn.commit()
 
