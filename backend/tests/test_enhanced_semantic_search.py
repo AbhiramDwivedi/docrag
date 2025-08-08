@@ -174,7 +174,7 @@ def test_enhanced_semantic_search():
     # Mock the necessary imports and settings
     with patch('backend.src.querying.agents.plugins.semantic_search.settings') as mock_settings, \
          patch('backend.src.querying.agents.plugins.semantic_search.embed_texts') as mock_embed, \
-         patch('backend.src.querying.agents.plugins.semantic_search.EnhancedVectorStore') as mock_vs_class, \
+         patch('backend.src.querying.agents.plugins.semantic_search.VectorStore') as mock_vs_class, \
          patch('backend.src.querying.agents.plugins.semantic_search.OpenAI', MockOpenAIClient):
         
         # Configure mocks

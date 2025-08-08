@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
 
 from querying.agents.plugin import Plugin, PluginInfo
 from ingestion.processors.embedder import embed_texts
-from ingestion.storage.enhanced_vector_store import EnhancedVectorStore
+from ingestion.storage.vector_store import VectorStore
 from shared.config import settings
 from openai import OpenAI
 
@@ -83,7 +83,7 @@ class SemanticSearchPlugin(Plugin):
             
             # Initialize vector store if needed
             if self._vector_store is None:
-                self._vector_store = EnhancedVectorStore.load(
+                self._vector_store = VectorStore.load(
                     Path(settings.vector_path), 
                     Path(settings.db_path)
                 )

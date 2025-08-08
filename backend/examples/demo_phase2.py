@@ -91,12 +91,12 @@ def demo_vector_store():
     """Demonstrate vector store schema."""
     rprint("\n💾 [bold]Vector Store Schema[/bold]")
     
-    from backend.src.ingestion.storage.enhanced_vector_store import EnhancedVectorStore
+    from backend.src.ingestion.storage.vector_store import VectorStore
     import tempfile
     
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir = Path(tmpdir)
-        store = EnhancedVectorStore(tmpdir / "demo.index", tmpdir / "demo.db", dim=384)
+        store = VectorStore(tmpdir / "demo.index", tmpdir / "demo.db", dim=384)
         
         # Show the schema capabilities
         rprint("\n📊 Database Schema Features:")

@@ -10,14 +10,14 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from ingestion.extractors import extract_text, set_all_sheets_mode
 from ingestion.processors.chunker import chunk_text
 from ingestion.processors.embedder import embed_texts
-from ingestion.storage.enhanced_vector_store import EnhancedVectorStore
+from ingestion.storage.vector_store import VectorStore
 from ingestion.storage.knowledge_graph import KnowledgeGraph, KnowledgeGraphBuilder
 from shared.config import settings
 from shared.utils import get_file_hash
 from rich.progress import track
 
 
-def process_file(path: Path, store: EnhancedVectorStore, kg: KnowledgeGraph):
+def process_file(path: Path, store: VectorStore, kg: KnowledgeGraph):
     file_id = get_file_hash(path)
     units = extract_text(path)
     all_chunks, texts, meta = [], [], []
@@ -83,7 +83,7 @@ def main():
         set_all_sheets_mode(True)
         print("🔄 ALL-SHEETS MODE enabled: Will process all Excel sheets")
     
-    store = EnhancedVectorStore(Path(settings.vector_path), Path(settings.db_path), dim=384)
+    store = VectorStore(Path(settings.vector_path), Path(settings.db_path), dim=384)
     
     # Initialize knowledge graph using resolved path from configuration
     kg_path = settings.resolve_storage_path(settings.knowledge_graph_path)

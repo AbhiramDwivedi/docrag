@@ -41,3 +41,14 @@ src/shared/config.yaml
 check_db.py
 check_schema.py
 # Note: test_*.py files are now allowed everywhere since tests are properly organized
+
+# Temporary development files - never commit these
+temp_*.py
+temp_*.md
+*_report.py
+*_analysis.py
+*_status.py
+*_summary.py
+debug.log
+*.log
+demo_*.py

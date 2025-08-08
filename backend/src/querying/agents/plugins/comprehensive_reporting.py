@@ -17,7 +17,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
 
 from ..plugin import Plugin, PluginInfo
 from ingestion.storage.vector_store import VectorStore
-from ingestion.storage.enhanced_vector_store import EnhancedVectorStore
 from .document_relationships import DocumentRelationshipPlugin
 
 
@@ -122,14 +121,10 @@ class ComprehensiveReportingPlugin(Plugin):
         """Get or initialize the vector store."""
         if self._vector_store is None:
             try:
-                if Path(self.db_path).exists():
-                    self._vector_store = EnhancedVectorStore.load(
-                        Path(self.vector_store_path), 
-                        Path(self.db_path)
-                    )
-                else:
-                    self._vector_store = VectorStore.load(Path(self.vector_store_path))
-                    logger.warning("Using basic vector store - enhanced features unavailable")
+                self._vector_store = VectorStore.load(
+                    Path(self.vector_store_path), 
+                    Path(self.db_path)
+                )
             except Exception as e:
                 logger.error(f"Failed to load vector store: {e}")
                 raise
