@@ -821,11 +821,13 @@ class VectorStore:
             ('document_type', 'TEXT')
         ]
         
+        changes_made = False
         for col_name, col_type in new_columns:
             if col_name not in columns:
                 try:
                     cur.execute(f"ALTER TABLE chunks ADD COLUMN {col_name} {col_type}")
                     print(f"Added column {col_name} to chunks table")
+                    changes_made = True
                 except sqlite3.OperationalError as e:
                     if "duplicate column name" not in str(e).lower():
                         raise e
@@ -845,4 +847,7 @@ class VectorStore:
                 pass  # Index might already exist
         
         self.conn.commit()
-        print("Database schema migration completed successfully")
+        
+        # Only show success message if actual changes were made
+        if changes_made:
+            print("Database schema migration completed successfully")

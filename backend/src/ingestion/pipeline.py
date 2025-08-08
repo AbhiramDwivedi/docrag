@@ -25,14 +25,32 @@ def process_file(path: Path, store: VectorStore, kg: KnowledgeGraph):
     # Collect all text content for knowledge graph processing
     full_text = ""
     
+    # Extract document-level metadata
+    document_id = file_id
+    document_path = str(path)
+    document_title = path.stem  # filename without extension
+    document_type = path.suffix.upper().lstrip('.')  # PDF, DOCX, etc.
+    
+    # First pass: collect all chunks to know total count
     for unit_id, text in units:
         full_text += f"\n{text}"  # Accumulate text for entity extraction
         chunks = chunk_text(text, file_id, unit_id,
                             settings.chunk_size, settings.overlap)
-        for ch in chunks:
-            all_chunks.append(ch)
-            texts.append(ch['text'])
-            meta.append((ch['id'], str(path), unit_id, ch['text'], path.stat().st_mtime, 1))
+        all_chunks.extend(chunks)
+    
+    # Second pass: create metadata with proper chunk indexing
+    for chunk_index, ch in enumerate(all_chunks):
+        texts.append(ch['text'])
+        # Generate enhanced 13-field metadata format
+        # Extract unit_id from chunk_id (format: file_hash_unit_chunk)
+        chunk_parts = ch['id'].split('_')
+        section_id = '_'.join(chunk_parts[1:-1]) if len(chunk_parts) > 2 else chunk_parts[1] if len(chunk_parts) > 1 else "unknown"
+        
+        meta.append((
+            ch['id'], str(path), section_id, ch['text'], path.stat().st_mtime, 1,
+            document_id, document_path, document_title, section_id, 
+            chunk_index, len(all_chunks), document_type
+        ))
     
     if not texts:
         return
