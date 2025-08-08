@@ -1,5 +1,7 @@
 # DocQuest Architecture
 
+*Last updated: January 2025*
+
 This document describes the architecture and data flow of the DocQuest (Document Retrieval-Augmented Generation) system.
 
 ## System Overview
@@ -12,9 +14,9 @@ DocQuest is a local RAG pipeline that quests through documents from local folder
 graph TB
     %% User Interface Layer
     subgraph "User Interface"
-        CLI[CLI Interface<br/>backend/src/backend/src/interface/cli/ask.py]
+        CLI[CLI Interface<br/>backend/src/interface/cli/ask.py]
         API[FastAPI Web API<br/>backend/src/querying/api.py]
-        WebUI[Next.js Web UI<br/>package.json]
+        WebUI[Next.js Web UI<br/>package.json<br/>📝 Optional/Planned]
     end
 
     %% Document Sources
@@ -25,19 +27,21 @@ graph TB
         Excel[Excel Files<br/>📊 .xlsx]
         PPT[PowerPoint<br/>📄 .pptx]
         TXT[Text Files<br/>📄 .txt]
+        Email[Email Files<br/>📧 .msg]
     end
 
     %% Processing Pipeline
     subgraph "Document Processing Pipeline"
-        Watcher[File Watcher<br/>watcher/watch.py<br/>🔍 Monitors changes]
+        Watcher[File Watcher<br/>watcher/watch.py<br/>🔍 Optional/Planned]
         
         subgraph "Modular Extractors"
             ExtractorFactory[Extractor Factory<br/>backend/src/ingestion/extractors/__init__.py<br/>🏭 Routes to specialized extractors]
             PDFExtractor[PDF Extractor<br/>backend/src/ingestion/extractors/pdf_extractor.py<br/>📄 LangChain + AI image analysis]
             DOCXExtractor[DOCX Extractor<br/>backend/src/ingestion/extractors/docx_extractor.py<br/>📝 Word document processing]
             PPTXExtractor[PPTX Extractor<br/>backend/src/ingestion/extractors/pptx_extractor.py<br/>📊 PowerPoint processing]
-            XLSXExtractor[XLSX Extractor<br/>backend/src/ingestion/extractors/xlsx_extractor.py<br/>📈 Excel processing]
+            XLSXExtractor[XLSX Extractor<br/>backend/src/ingestion/extractors/xlsx_simple_extractor.py<br/>📈 Excel processing]
             TXTExtractor[TXT Extractor<br/>backend/src/ingestion/extractors/txt_extractor.py<br/>📄 Plain text processing]
+            EmailExtractor[Email Extractor<br/>backend/src/ingestion/extractors/email_extractor.py<br/>📧 Outlook MSG processing]
         end
         
         Chunker[Text Chunker<br/>backend/src/ingestion/processors/chunker.py<br/>✂️ NLTK-based chunking]
@@ -47,8 +51,8 @@ graph TB
 
     %% Storage Layer
     subgraph "Storage Layer"
-        VectorDB[Vector Database<br/>FAISS IndexFlatL2<br/>🗃️ 384-dim embeddings]
-        MetaDB[Metadata Database<br/>SQLite<br/>📋 File metadata & chunks]
+        VectorStore[VectorStore (FAISS)<br/>IndexFlatL2<br/>🗃️ 384-dim embeddings]
+        MetadataDB[MetadataDB (SQLite)<br/>📋 File metadata & chunks]
         ConfigFile[Configuration<br/>config/config.yaml<br/>⚙️ Settings & API keys]
     end
 
@@ -59,26 +63,28 @@ graph TB
     end
 
     %% Data Flow
-    LocalDocs --> Watcher
+    LocalDocs --> ExtractorFactory
     PDFs --> ExtractorFactory
     Word --> ExtractorFactory
     Excel --> ExtractorFactory
     PPT --> ExtractorFactory
     TXT --> ExtractorFactory
+    Email --> ExtractorFactory
     
     ExtractorFactory --> PDFExtractor
     ExtractorFactory --> DOCXExtractor
     ExtractorFactory --> PPTXExtractor
     ExtractorFactory --> XLSXExtractor
     ExtractorFactory --> TXTExtractor
+    ExtractorFactory --> EmailExtractor
     
     PDFExtractor --> Chunker
     DOCXExtractor --> Chunker
     PPTXExtractor --> Chunker
     XLSXExtractor --> Chunker
     TXTExtractor --> Chunker
+    EmailExtractor --> Chunker
     
-    Watcher --> Pipeline
     Pipeline --> ExtractorFactory
     Chunker --> Embedder
     Embedder --> VectorStore
@@ -88,13 +94,10 @@ graph TB
     API --> VectorStore
     WebUI --> API
     
-    VectorStore --> OpenAI
     CLI --> OpenAI
     API --> OpenAI
     
     Embedder --> HuggingFace
-    SharedConfig --> Pipeline
-    SharedConfig --> OpenAI
 
     %% Styling
     classDef userInterface fill:#e1f5fe
@@ -103,13 +106,15 @@ graph TB
     classDef storage fill:#e8f5e8
     classDef external fill:#fff3e0
     classDef documents fill:#fce4ec
+    classDef optional fill:#f5f5f5,stroke-dasharray: 5 5
 
     class CLI,API,WebUI userInterface
-    class Watcher,Chunker,Embedder,Pipeline processing
-    class ExtractorFactory,PDFExtractor,DOCXExtractor,PPTXExtractor,XLSXExtractor,TXTExtractor extractors
-    class VectorStore,MetadataDB,SharedConfig storage
+    class Chunker,Embedder,Pipeline processing
+    class ExtractorFactory,PDFExtractor,DOCXExtractor,PPTXExtractor,XLSXExtractor,TXTExtractor,EmailExtractor extractors
+    class VectorStore,MetadataDB,ConfigFile storage
     class OpenAI,HuggingFace external
-    class LocalDocs,PDFs,Word,Excel,PPT,TXT documents
+    class LocalDocs,PDFs,Word,Excel,PPT,TXT,Email documents
+    class Watcher,WebUI optional
 ```
 
 ## Component Details
@@ -123,14 +128,14 @@ sequenceDiagram
     participant Factory as extractors/__init__.py (Factory)
     participant PDFExt as pdf_extractor.py
     participant DOCXExt as docx_extractor.py
-    participant XLSXExt as xlsx_extractor.py
+    participant XLSXExt as xlsx_simple_extractor.py
     participant Chunker as chunker.py
-    participant Embedder as embed.py
+    participant Embedder as embedder.py
     participant VectorStore as vector_store.py
     participant FAISS
     participant SQLite
 
-    User->>Pipeline: python -m backend.ingestion.pipeline
+    User->>Pipeline: python -m ingestion.pipeline
     Pipeline->>Factory: extract_text(file_path)
     
     alt PDF File
@@ -171,11 +176,12 @@ The document extraction system uses a factory pattern with specialized extractor
 - Provides centralized error handling and logging
 
 #### Specialized Extractors (`backend/src/ingestion/extractors/`)
-- **PDF Extractor**: Advanced processing with LangChain and GPT-4 Vision image analysis
-- **DOCX Extractor**: Word document paragraph extraction using python-docx
-- **PPTX Extractor**: PowerPoint slide-by-slide text extraction
-- **XLSX Extractor**: Excel spreadsheet processing with smart sheet prioritization
-- **TXT Extractor**: Simple UTF-8 text file processing
+- **PDF Extractor** (`pdf_extractor.py`): Advanced processing with LangChain and GPT-4 Vision image analysis
+- **DOCX Extractor** (`docx_extractor.py`): Word document paragraph extraction using python-docx
+- **PPTX Extractor** (`pptx_extractor.py`): PowerPoint slide-by-slide text extraction
+- **XLSX Extractor** (`xlsx_simple_extractor.py`): Excel spreadsheet processing with smart sheet prioritization
+- **TXT Extractor** (`txt_extractor.py`): Simple UTF-8 text file processing
+- **Email Extractor** (`email_extractor.py`): Outlook MSG file processing with metadata extraction
 
 #### Benefits
 - **Isolation**: Issues with one file type don't affect others
@@ -230,6 +236,7 @@ sequenceDiagram
 - **Rationale**: Performance for vector search + flexibility for metadata
 - **Implementation**: FAISS for vector similarity, SQLite for rich metadata queries
 - **Benefits**: Fast similarity search with detailed provenance tracking
+- **Components**: VectorStore (FAISS) and MetadataDB (SQLite) provide unified interface
 
 ### 4. Enhanced Excel Processing
 - **Rationale**: Excel files contain complex structured data requiring special handling
@@ -267,6 +274,7 @@ graph LR
     Config --> Settings
     Settings --> Pipeline[Processing Pipeline]
     Settings --> API[API Services]
+    Settings --> CLI[CLI Interface]
     
     classDef config fill:#fff9c4
     class Template,Config,Settings config
@@ -275,9 +283,11 @@ graph LR
 ## Performance Characteristics
 
 - **Vector Dimensionality**: 384 (sentence-transformers/all-MiniLM-L6-v2)
-- **Chunk Size**: 800 characters with 150 character overlap
-- **Search Results**: Top-8 relevant chunks for context
-- **Excel Limits**: 100MB files, 15 sheets (smart prioritization), 2000 rows/sheet
+- **Chunk Size**: 800 characters with 150 character overlap (configurable in `backend/src/shared/config.py`)
+- **Search Results**: Top-8 relevant chunks for context (configurable in CLI)
+- **Embedding Model**: sentence-transformers/all-MiniLM-L6-v2 (default, configurable)
+- **Batch Size**: 32 for embedding processing (configurable)
+- **Excel Limits**: Based on extractor implementation in `xlsx_simple_extractor.py`
 - **Memory Usage**: Scales with document corpus size and concurrent processing
 
 ## Security Model
@@ -300,7 +310,7 @@ graph TB
 ## Extensibility Points
 
 1. **New File Formats**: Add extractors in `backend/src/ingestion/extractors/`
-2. **Different Embeddings**: Modify `backend/src/ingestion/processors/embed.py` 
+2. **Different Embeddings**: Modify `backend/src/ingestion/processors/embedder.py` 
 3. **Alternative LLMs**: Update `backend/src/interface/cli/ask.py` and `backend/src/querying/api.py`
 4. **Custom Chunking**: Extend `backend/src/ingestion/processors/chunker.py`
 5. **Additional Metadata**: Enhance `backend/src/ingestion/storage/vector_store.py`
@@ -308,14 +318,59 @@ graph TB
 ## Deployment Patterns
 
 ### Local Development
+
+DocQuest uses Python's `sys.path` modification in both CLI and API entry points for module resolution. You can run commands in two ways:
+
+#### From `backend/src` directory (recommended):
 ```bash
-python -m backend.ingestion.pipeline  # Document processing
-python -m interface.cli.ask           # CLI queries
-uvicorn backend.querying.api:app      # Web API
+cd backend/src
+python -m ingestion.pipeline          # Document processing
+python -m interface.cli.ask "question"  # CLI queries
+uvicorn querying.api:app --reload     # Web API development
+```
+
+#### From repository root with PYTHONPATH:
+```bash
+# Linux/macOS
+export PYTHONPATH=backend/src
+python -m interface.cli.ask "question"
+uvicorn querying.api:app --reload
+
+# Windows
+set PYTHONPATH=backend/src
+python -m interface.cli.ask "question"
+uvicorn querying.api:app --reload
+```
+
+### API Usage
+
+The FastAPI server provides a simple REST interface:
+
+**Endpoint**: `POST /query`
+
+**Request body**:
+```json
+{
+  "question": "What are the project requirements?"
+}
+```
+
+**Response**:
+```json
+{
+  "answer": "Based on the retrieved documents..."
+}
+```
+
+**Example usage**:
+```bash
+curl -X POST "http://localhost:8000/query" \
+     -H "Content-Type: application/json" \
+     -d '{"question": "What is this project about?"}'
 ```
 
 ### Production Deployment
-- File watcher for real-time updates
-- Web UI for team access
+- File watcher for real-time updates (planned feature)
+- Web UI for team access (optional/planned)
 - Automated reindexing workflows
 - Health monitoring and logging
