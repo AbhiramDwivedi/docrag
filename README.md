@@ -14,7 +14,7 @@ A local RAG pipeline that **quests through your document collections** to find a
 ```bash
 # 1. Clone and setup
 git clone <your-repo-url>
-cd localfsmc
+cd docquest
 python -m venv .venv
 .venv\Scripts\activate  # Windows
 # source .venv/bin/activate  # macOS/Linux

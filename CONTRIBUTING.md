@@ -7,7 +7,7 @@ Thanks for your interest in contributing! This guide will help you get started.
 1. **Clone the repository**
    ```bash
    git clone <your-repo-url>
-   cd localfsmc
+   cd docquest
    ```
 
 2. **Setup development environment**
