@@ -20,7 +20,7 @@ This file extends the repository's GitHub Copilot instructions. **Always follow 
    - **Always activate virtual environment** before running Python commands: `.venv\Scripts\activate`
    - Never run `python`, `pytest`, or `pip` commands without activating venv first
    - Use `python -m pytest` instead of direct `pytest` command
-   - Working directory should be `c:\sw\code\docrag\backend` for most operations
+   - Working directory should be `c:\sw\code\docquest\backend` for most operations
 
 ### **File Operations**
 2. **Temporary Files for Testing**
@@ -36,7 +36,7 @@ This file extends the repository's GitHub Copilot instructions. **Always follow 
 ### **Terminal Operations**
 3. **Windows PowerShell Considerations**
    - Use `;` to join commands on single line if needed
-   - Use `cd "c:\sw\code\docrag\backend" ; command` syntax for directory changes
+   - Use `cd "c:\sw\code\docquest\backend" ; command` syntax for directory changes
    - Handle Windows file permission errors gracefully (SQLite database locks are common)
    - Use `Remove-Item` instead of `rm` for file deletion
 
@@ -147,7 +147,7 @@ This file **supplements** the GitHub Copilot instructions and should be used tog
 
 **Before any Python operation:**
 ```powershell
-cd "c:\sw\code\docrag\backend" ; .venv\Scripts\activate
+cd "c:\sw\code\docquest\backend" ; .venv\Scripts\activate
 ```
 
 **For testing complex logic:**
