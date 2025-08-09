@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from ingestion.pipeline import process_file
 from ingestion.storage.vector_store import VectorStore
-from ingestion.storage.knowledge_graph import KnowledgeGraph, KnowledgeGraphBuilder, Entity
+from ingestion.storage.knowledge_graph import KnowledgeGraph, KnowledgeGraphBuilder, Entity, DocumentNode
 from querying.agents.plugins.knowledge_graph import KnowledgeGraphPlugin
 
 
@@ -271,3 +271,123 @@ class TestKnowledgeGraphIntegration:
             else:
                 # Other errors are fine as long as they're not KG-related
                 pass
+    
+    def test_document_node_creation_and_linkage(self, temp_dirs):
+        """Test DocumentNode creation and document-entity linkage."""
+        temp_path, kg_path, vector_path, meta_path = temp_dirs
+        
+        # Initialize knowledge graph
+        kg = KnowledgeGraph(str(kg_path))
+        kg_builder = KnowledgeGraphBuilder(kg)
+        
+        # Test text with known entities
+        test_text = """
+        John Smith works for Acme Corporation. He is the project manager for the Budget Planning initiative.
+        Contact John at john.smith@acme.com for more information about the project.
+        The project involves analyzing quarterly reports and meeting with stakeholders.
+        """
+        
+        document_path = "/test/sample_document.txt"
+        
+        # Extract entities and relationships
+        entities, relationships = kg_builder.extract_entities_from_text(test_text, document_path)
+        
+        # Create DocumentNode
+        document_node = kg_builder.create_document_node(document_path, entities, test_text)
+        
+        # Verify DocumentNode properties
+        assert document_node.document_path == document_path
+        assert document_node.title == "sample_document"  # filename without extension
+        assert len(document_node.content_summary) > 0
+        assert len(document_node.entities) > 0
+        assert len(document_node.themes) > 0
+        assert document_node.metadata is not None
+        
+        # Verify entities are linked (excluding document entity)
+        non_doc_entities = [e for e in entities if e.type != 'document']
+        assert len(document_node.entities) == len(non_doc_entities)
+        
+        # Verify entity IDs match
+        expected_entity_ids = [e.id for e in non_doc_entities]
+        for entity_id in document_node.entities:
+            assert entity_id in expected_entity_ids
+        
+        # Verify themes come from entity types
+        expected_themes = list(set([e.type for e in non_doc_entities]))
+        for theme in document_node.themes:
+            assert theme in expected_themes
+        
+        # Test adding DocumentNode to KG
+        assert kg.add_document_node(document_node) == True
+        
+        # Verify we can retrieve document nodes from the database
+        import sqlite3
+        with sqlite3.connect(kg.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM document_nodes")
+            count = cursor.fetchone()[0]
+            assert count == 1
+            
+            cursor.execute("SELECT document_path, title, entities FROM document_nodes WHERE document_path = ?", (document_path,))
+            row = cursor.fetchone()
+            assert row is not None
+            assert row[0] == document_path
+            assert row[1] == "sample_document"
+            
+            # Verify entities are stored as JSON
+            import json
+            stored_entities = json.loads(row[2])
+            assert len(stored_entities) == len(document_node.entities)
+    
+    def test_pipeline_document_node_integration(self, temp_dirs, sample_document):
+        """Test that pipeline creates DocumentNodes during ingestion."""
+        temp_path, kg_path, vector_path, meta_path = temp_dirs
+        
+        # Initialize stores
+        kg = KnowledgeGraph(str(kg_path))
+        
+        try:
+            # Import and test at the integration level
+            from ingestion.pipeline import process_file
+            from ingestion.storage.vector_store import VectorStore
+            
+            # Mock the vector store operations to avoid network calls
+            store = VectorStore(vector_path, meta_path, dim=384)
+            
+            # Check initial state - should have 0 document nodes
+            import sqlite3
+            with sqlite3.connect(kg.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT COUNT(*) FROM document_nodes")
+                initial_count = cursor.fetchone()[0]
+                assert initial_count == 0
+            
+            # This might fail on embedding, but should create document nodes
+            try:
+                process_file(sample_document, store, kg)
+            except Exception as e:
+                # Ignore embedding errors, we're testing KG integration
+                if not any(term in str(e).lower() for term in ['embedding', 'model', 'network', 'connect']):
+                    raise e
+            
+            # Check that DocumentNode was created
+            with sqlite3.connect(kg.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT COUNT(*) FROM document_nodes")
+                final_count = cursor.fetchone()[0]
+                assert final_count == 1
+                
+                # Verify document node contains expected data
+                cursor.execute("SELECT document_path, title, entities FROM document_nodes")
+                row = cursor.fetchone()
+                assert row is not None
+                assert str(sample_document) in row[0]  # document path
+                assert len(row[1]) > 0  # title
+                
+                # Check entities were linked
+                import json
+                entities = json.loads(row[2])
+                assert len(entities) > 0  # Should have extracted some entities
+                
+        except ImportError:
+            pytest.skip("Required modules not available for integration test")

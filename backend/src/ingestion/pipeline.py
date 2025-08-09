@@ -63,6 +63,10 @@ def process_file(path: Path, store: VectorStore, kg: KnowledgeGraph):
             kg.add_entity(entity)
         for relationship in relationships:
             kg.add_relationship(relationship)
+        
+        # Create and add DocumentNode to link document to its entities
+        document_node = kg_builder.create_document_node(str(path), entities, full_text)
+        kg.add_document_node(document_node)
     except Exception as e:
         # Don't fail the entire pipeline if KG extraction fails
         print(f"⚠️ Knowledge graph extraction failed for {path.name}: {e}")

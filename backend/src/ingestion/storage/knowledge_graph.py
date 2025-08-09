@@ -959,3 +959,69 @@ class KnowledgeGraphBuilder:
         except Exception as e:
             logger.error(f"Error building knowledge graph: {e}")
             return False
+    
+    def create_document_node(self, document_path: str, entities: List[Entity], full_text: str, metadata: Dict[str, Any] = None) -> DocumentNode:
+        """Create a DocumentNode that links a document to its extracted entities.
+        
+        Args:
+            document_path: Full path to the source document
+            entities: List of entities extracted from the document  
+            full_text: Full text content of the document
+            metadata: Optional metadata about the document
+            
+        Returns:
+            DocumentNode linking the document to its entities
+        """
+        # Extract basic document info
+        doc_path = Path(document_path)
+        title = doc_path.stem  # filename without extension
+        
+        # Create a simple content summary (first 200 chars) with smarter truncation
+        stripped_text = full_text.strip()
+        if len(stripped_text) > 200:
+            content_summary = stripped_text[:197] + "..."
+        else:
+            content_summary = stripped_text
+        
+        # Extract entity IDs (excluding the document entity itself)
+        entity_ids = [entity.id for entity in entities if entity.type != 'document']
+        
+        # Extract themes from entity types
+        themes = list(set([entity.type for entity in entities if entity.type != 'document']))
+        
+        # Build metadata if not provided
+        if metadata is None:
+            metadata = {}
+        
+        # Add document metadata
+        try:
+            stat = doc_path.stat()
+            metadata.update({
+                'file_size': stat.st_size,
+                'file_extension': doc_path.suffix.lower(),
+                'modified_time': stat.st_mtime,
+                'entity_count': len(entity_ids),
+                'content_length': len(full_text)
+            })
+        except Exception:
+            # If file doesn't exist or stat fails, use minimal metadata
+            metadata.update({
+                'file_extension': doc_path.suffix.lower(),
+                'entity_count': len(entity_ids),
+                'content_length': len(full_text)
+            })
+        
+        # Create DocumentNode
+        now = datetime.now()
+        document_node = DocumentNode(
+            document_path=str(document_path),
+            title=title,
+            content_summary=content_summary,
+            entities=entity_ids,
+            themes=themes,
+            metadata=metadata,
+            created_at=now,
+            modified_at=now
+        )
+        
+        return document_node
