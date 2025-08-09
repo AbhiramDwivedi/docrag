@@ -159,6 +159,15 @@ class Agent:
             "pdf", "pptx", "docx", "xlsx", "msg", "txt"
         ]
         
+        # Document discovery keywords - queries looking for specific documents by name/title
+        document_discovery_keywords = [
+            "find the", "get the", "show me the", "where is the", "locate the",
+            "find document", "find file", "get document", "get file", 
+            "document called", "file called", "document named", "file named",
+            "document about", "file about", "document titled", "file titled",
+            "the document", "the file", "which document", "which file"
+        ]
+        
         # Document-level query keywords (NEW)
         document_level_keywords = [
             "document", "documents", "file", "files", "source", "sources",
@@ -205,6 +214,9 @@ class Agent:
         # Check for metadata queries
         has_metadata_indicators = any(keyword in question_lower for keyword in metadata_keywords)
         
+        # Check for document discovery queries (NEW) - prioritize these for metadata
+        has_document_discovery_indicators = any(keyword in question_lower for keyword in document_discovery_keywords)
+        
         # Check for relationship analysis queries
         has_relationship_indicators = any(keyword in question_lower for keyword in relationship_keywords)
         
@@ -236,12 +248,28 @@ class Agent:
         
         # Log classification analysis
         classification_logger.debug(f"Query analysis - email: {has_email_indicators}, metadata: {has_metadata_indicators}, "
-                                   f"relationships: {has_relationship_indicators}, reporting: {has_reporting_indicators}, "
-                                   f"document_level: {has_document_level_indicators}, cross_document: {has_cross_document_indicators}, "
-                                   f"comprehensive: {has_comprehensive_indicators}, multi-step: {is_multi_step}")
+                                   f"document_discovery: {has_document_discovery_indicators}, relationships: {has_relationship_indicators}, "
+                                   f"reporting: {has_reporting_indicators}, document_level: {has_document_level_indicators}, "
+                                   f"cross_document: {has_cross_document_indicators}, comprehensive: {has_comprehensive_indicators}, "
+                                   f"multi-step: {is_multi_step}")
         
         # Phase III enhanced classification logic
-        if has_reporting_indicators:
+        
+        # Document discovery queries - PRIORITY: Route primarily to metadata with semantic as backup
+        if has_document_discovery_indicators:
+            # Document discovery queries should prioritize metadata search
+            if self.registry.get_plugin("metadata"):
+                plugins_to_use.append("metadata")
+                self._reasoning_trace.append("Detected document discovery query - prioritizing metadata search")
+                classification_logger.info("Classified as document discovery query - using metadata priority")
+            
+            # Add semantic search as secondary for document discovery
+            if self.registry.get_plugin("semantic_search"):
+                plugins_to_use.append("semantic_search")
+                self._reasoning_trace.append("Adding semantic search as backup for document discovery")
+                classification_logger.info("Added semantic search as backup for document discovery")
+        
+        elif has_reporting_indicators:
             # Queries asking for reports, summaries, or analytics
             if self.registry.get_plugin("comprehensive_reporting"):
                 plugins_to_use.append("comprehensive_reporting")
@@ -432,13 +460,24 @@ class Agent:
         """
         question_lower = question.lower()
         
+        # Detect document discovery queries
+        document_discovery_patterns = [
+            "find the", "get the", "show me the", "where is the", "locate the",
+            "find document", "find file", "get document", "get file",
+            "document called", "file called", "document named", "file named",
+            "document about", "file about", "document titled", "file titled"
+        ]
+        
+        is_document_discovery = any(pattern in question_lower for pattern in document_discovery_patterns)
+        
         # Base parameters
         params = {
             "question": question,
             "use_document_level": True,  # Enable document-level retrieval by default
             "k": 50,  # Increased for document-level analysis
             "max_documents": 5,
-            "context_window": 3
+            "context_window": 3,
+            "include_metadata_search": is_document_discovery  # NEW: Include metadata in search for document discovery
         }
         
         # Adjust parameters based on query characteristics
@@ -461,6 +500,14 @@ class Agent:
             params["context_window"] = 2
             params["k"] = 30
             self._reasoning_trace.append("Using focused search parameters for factual query")
+        
+        # Document discovery queries need metadata-aware search
+        elif is_document_discovery:
+            params["max_documents"] = 10  # More documents to find the right one
+            params["context_window"] = 2  # Less context needed for discovery
+            params["k"] = 100  # Cast a wider net
+            params["include_metadata_search"] = True
+            self._reasoning_trace.append("Using metadata-aware search parameters for document discovery")
         
         # Multi-document queries need broader search
         elif any(word in question_lower for word in [
@@ -834,7 +881,7 @@ Respond with only the JSON, no other text:"""
         return params
     
     def _synthesize_response(self, question: str, results: List[tuple]) -> str:
-        """Enhanced response synthesis with multi-step query support.
+        """Enhanced response synthesis with intelligent document discovery support.
         
         Args:
             question: Original user question
@@ -857,44 +904,132 @@ Respond with only the JSON, no other text:"""
         # Separate metadata and content results
         metadata_results = []
         content_results = []
+        knowledge_graph_results = []
+        other_results = []
         
         for plugin_name, result in results:
             if plugin_name == "metadata":
                 metadata_results.append(result)
             elif plugin_name == "semantic_search":
                 content_results.append(result)
+            elif plugin_name == "knowledge_graph":
+                knowledge_graph_results.append(result)
+            else:
+                other_results.append((plugin_name, result))
         
-        # Build combined response
+        # Detect document discovery queries - queries looking for specific documents by name/title
+        question_lower = question.lower()
+        document_discovery_patterns = [
+            "find the", "get the", "show me the", "where is the", "locate the",
+            "find document", "find file", "get document", "get file",
+            "document called", "file called", "document named", "file named",
+            "document about", "file about", "document titled", "file titled"
+        ]
+        
+        is_document_discovery = any(pattern in question_lower for pattern in document_discovery_patterns)
+        
+        # Also detect by document/file keywords combined with specific terms
+        has_document_keywords = any(word in question_lower for word in ["document", "file", "the"])
+        has_specific_terms = any(word in question_lower for word in ["find", "get", "show", "where", "locate"])
+        is_document_discovery = is_document_discovery or (has_document_keywords and has_specific_terms)
+        
+        synthesis_logger.info(f"Document discovery query detected: {is_document_discovery}")
+        
+        # Enhanced synthesis logic with document discovery prioritization
         response_parts = []
+        metadata_found_documents = False
+        semantic_found_content = False
         
-        # Start with metadata if it provides context
+        # Analyze what each plugin found
         if metadata_results:
             for metadata_result in metadata_results:
                 metadata_response = metadata_result.get("response", "")
-                if metadata_response and not metadata_response.startswith("❌"):
-                    # Check if this is providing context for content search
-                    if content_results and any(word in question.lower() for word in ["about", "regarding", "contains"]):
-                        response_parts.append(f"📊 {metadata_response}")
-                    else:
-                        response_parts.append(metadata_response)
-        
-        # Add content results with context
+                if metadata_response and not metadata_response.startswith("❌") and not "No files found" in metadata_response:
+                    metadata_found_documents = True
+                    self._reasoning_trace.append("Metadata plugin found matching documents")
+                    
         if content_results:
             for content_result in content_results:
                 content_response = content_result.get("response", "")
-                if content_response and not content_response.startswith("❌"):
-                    if metadata_results:
-                        # If we have metadata context, introduce content section
-                        response_parts.append(f"\n📄 Content Analysis:\n{content_response}")
-                    else:
+                if content_response and not content_response.startswith("❌") and "No relevant information found" not in content_response:
+                    semantic_found_content = True
+                    self._reasoning_trace.append("Semantic search found matching content")
+        
+        # Smart prioritization based on query type and results
+        if is_document_discovery:
+            synthesis_logger.info("Applying document discovery synthesis strategy")
+            
+            if metadata_found_documents:
+                # For document discovery queries, prioritize metadata results
+                synthesis_logger.info("Prioritizing metadata results for document discovery")
+                for metadata_result in metadata_results:
+                    metadata_response = metadata_result.get("response", "")
+                    if metadata_response and not metadata_response.startswith("❌"):
+                        response_parts.append(metadata_response)
+                        
+                # Add semantic content if it provides additional value
+                if semantic_found_content:
+                    for content_result in content_results:
+                        content_response = content_result.get("response", "")
+                        if content_response and not content_response.startswith("❌") and "No relevant information found" not in content_response:
+                            response_parts.append(f"\n📄 Related Content:\n{content_response}")
+                            
+            elif semantic_found_content:
+                # Metadata didn't find documents, but semantic search did - use semantic results
+                synthesis_logger.info("Using semantic results as fallback for document discovery")
+                for content_result in content_results:
+                    content_response = content_result.get("response", "")
+                    if content_response and not content_response.startswith("❌"):
                         response_parts.append(content_response)
+            else:
+                # Neither found anything useful for document discovery
+                return "No relevant documents found matching your query."
+                
+        else:
+            # Standard content-focused synthesis for non-document-discovery queries
+            synthesis_logger.info("Applying standard content synthesis strategy")
+            
+            # Start with metadata if it provides context
+            if metadata_results:
+                for metadata_result in metadata_results:
+                    metadata_response = metadata_result.get("response", "")
+                    if metadata_response and not metadata_response.startswith("❌"):
+                        # Check if this is providing context for content search
+                        if content_results and any(word in question.lower() for word in ["about", "regarding", "contains"]):
+                            response_parts.append(f"📊 {metadata_response}")
+                        else:
+                            response_parts.append(metadata_response)
+            
+            # Add content results with context
+            if content_results:
+                for content_result in content_results:
+                    content_response = content_result.get("response", "")
+                    if content_response and not content_response.startswith("❌"):
+                        if metadata_results and metadata_found_documents:
+                            # If we have metadata context, introduce content section
+                            response_parts.append(f"\n📄 Content Analysis:\n{content_response}")
+                        else:
+                            response_parts.append(content_response)
+        
+        # Add knowledge graph and other results
+        for kg_result in knowledge_graph_results:
+            kg_response = kg_result.get("response", "")
+            if kg_response and not kg_response.startswith("❌"):
+                response_parts.append(f"\n🔗 Knowledge Graph:\n{kg_response}")
+                
+        for plugin_name, other_result in other_results:
+            other_response = other_result.get("response", "")
+            if other_response and not other_response.startswith("❌"):
+                response_parts.append(f"\n📋 {plugin_name.title()}:\n{other_response}")
         
         # Combine results intelligently
         if response_parts:
+            synthesis_logger.info(f"Successfully synthesized response from {len(response_parts)} parts")
             # For queries that ask for both metadata and content, structure the response
             if len(response_parts) > 1 and any(word in question.lower() for word in ["and", "plus", "also"]):
                 return "\n\n".join(response_parts)
             else:
                 return "\n\n".join(response_parts)
         else:
+            synthesis_logger.info("No valid response parts found")
             return "No relevant information found."
