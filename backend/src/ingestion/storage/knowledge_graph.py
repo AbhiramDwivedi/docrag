@@ -972,15 +972,16 @@ class KnowledgeGraphBuilder:
         Returns:
             DocumentNode linking the document to its entities
         """
-        from pathlib import Path
-        from datetime import datetime
-        
         # Extract basic document info
         doc_path = Path(document_path)
         title = doc_path.stem  # filename without extension
         
-        # Create a simple content summary (first 200 chars)
-        content_summary = full_text.strip()[:200] + "..." if len(full_text.strip()) > 200 else full_text.strip()
+        # Create a simple content summary (first 200 chars) with smarter truncation
+        stripped_text = full_text.strip()
+        if len(stripped_text) > 200:
+            content_summary = stripped_text[:197] + "..."
+        else:
+            content_summary = stripped_text
         
         # Extract entity IDs (excluding the document entity itself)
         entity_ids = [entity.id for entity in entities if entity.type != 'document']
