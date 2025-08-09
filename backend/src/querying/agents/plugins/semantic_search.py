@@ -38,8 +38,9 @@ class SemanticSearchPlugin(Plugin):
         
         Implements multi-stage search process:
         1. Initial Discovery - Vector search for top-k chunks
-        2. Document Selection - Group and rank documents 
-        3. Context Expansion - Retrieve full document sections
+        2. Optional Metadata Search - Include filename/title matching for document discovery
+        3. Document Selection - Group and rank documents 
+        4. Context Expansion - Retrieve full document sections
         
         Args:
             params: Dictionary containing:
@@ -48,6 +49,7 @@ class SemanticSearchPlugin(Plugin):
                 - max_documents: Maximum documents to analyze (default: 5)
                 - context_window: Context expansion window (default: 3)
                 - use_document_level: Enable document-level retrieval (default: True)
+                - include_metadata_search: Include metadata/filename search (default: False)
                 
         Returns:
             Dictionary containing:
@@ -60,6 +62,7 @@ class SemanticSearchPlugin(Plugin):
         max_documents = params.get("max_documents", 5)
         context_window = params.get("context_window", 3)
         use_document_level = params.get("use_document_level", True)
+        include_metadata_search = params.get("include_metadata_search", False)
         
         if not question.strip():
             return {
@@ -92,6 +95,17 @@ class SemanticSearchPlugin(Plugin):
             q_vec = embed_texts([question], settings.embed_model)[0]
             initial_results = self._vector_store.query(q_vec, k=k)
             
+            # Stage 1.5: Optional Metadata Search for document discovery queries
+            metadata_boost_docs = []
+            if include_metadata_search and initial_results:
+                try:
+                    # Get document paths that might match the query based on filename
+                    metadata_boost_docs = self._find_metadata_matching_documents(question, initial_results)
+                    if metadata_boost_docs:
+                        logger.info(f"Metadata search found {len(metadata_boost_docs)} potential document matches")
+                except Exception as e:
+                    logger.warning(f"Metadata search failed: {e}")
+            
             if not initial_results:
                 return {
                     "response": "No relevant information found.",
@@ -102,6 +116,11 @@ class SemanticSearchPlugin(Plugin):
             if use_document_level:
                 # Stage 2: Document Selection - Group and rank documents
                 ranked_documents = self._vector_store.rank_documents_by_relevance(initial_results)
+                
+                # Apply metadata boosting if we found matching documents
+                if metadata_boost_docs:
+                    ranked_documents = self._apply_metadata_boosting(ranked_documents, metadata_boost_docs)
+                    
                 selected_documents = ranked_documents[:max_documents]
                 
                 # Stage 3: Context Expansion - Retrieve full document sections
@@ -250,7 +269,8 @@ Answer:"""
                 "k": "int - Number of initial chunks to retrieve (default: 50)",
                 "max_documents": "int - Maximum documents to analyze (default: 5)", 
                 "context_window": "int - Context expansion window size (default: 3)",
-                "use_document_level": "bool - Enable document-level retrieval (default: True)"
+                "use_document_level": "bool - Enable document-level retrieval (default: True)",
+                "include_metadata_search": "bool - Include metadata/filename matching for document discovery (default: False)"
             }
         )
     
@@ -280,7 +300,117 @@ Answer:"""
         if not isinstance(use_document_level, bool):
             return False
         
+        include_metadata_search = params.get("include_metadata_search", False)
+        if not isinstance(include_metadata_search, bool):
+            return False
+        
         return True
+    
+    def _find_metadata_matching_documents(self, question: str, initial_results: list) -> list:
+        """Find documents whose metadata (filename/title) might match the query.
+        
+        Args:
+            question: The user's question
+            initial_results: Results from vector search
+            
+        Returns:
+            List of document paths that might match based on metadata
+        """
+        # Extract potential document/file names from the question
+        import re
+        
+        # Remove common stop words and patterns
+        clean_question = question.lower()
+        for pattern in ["find the", "get the", "show me the", "where is the", "locate the",
+                       "find", "get", "show", "where", "locate", "document", "file"]:
+            clean_question = clean_question.replace(pattern, "")
+        
+        # Extract meaningful terms (remove articles, prepositions, etc.)
+        terms = []
+        words = clean_question.split()
+        stop_words = {"a", "an", "the", "and", "or", "but", "in", "on", "at", "to", "for", "of", "with", "by"}
+        
+        for word in words:
+            word = word.strip(".,!?()[]\"'")
+            if len(word) > 2 and word not in stop_words:
+                terms.append(word)
+        
+        if not terms:
+            return []
+        
+        # Find documents from initial results that might match these terms
+        matching_docs = []
+        seen_docs = set()
+        
+        for result in initial_results:
+            doc_path = result.get("document_path", result.get("file", ""))
+            doc_title = result.get("document_title", "")
+            
+            if doc_path in seen_docs:
+                continue
+            seen_docs.add(doc_path)
+            
+            # Check if any terms appear in the document path or title
+            path_lower = doc_path.lower()
+            title_lower = doc_title.lower() if doc_title else ""
+            
+            match_score = 0
+            for term in terms:
+                if term in path_lower or term in title_lower:
+                    match_score += 1
+            
+            # If we found term matches in metadata, add to boost list
+            if match_score > 0:
+                matching_docs.append({
+                    "document_path": doc_path,
+                    "document_title": doc_title,
+                    "match_score": match_score
+                })
+        
+        # Sort by match score (highest first)
+        matching_docs.sort(key=lambda x: x["match_score"], reverse=True)
+        return matching_docs[:5]  # Top 5 metadata matches
+    
+    def _apply_metadata_boosting(self, ranked_documents: list, metadata_matches: list) -> list:
+        """Boost the ranking of documents that match metadata searches.
+        
+        Args:
+            ranked_documents: Documents ranked by semantic similarity
+            metadata_matches: Documents that match based on metadata
+            
+        Returns:
+            Re-ranked documents with metadata boosting applied
+        """
+        if not metadata_matches:
+            return ranked_documents
+        
+        # Create a map of metadata match scores
+        metadata_scores = {}
+        for match in metadata_matches:
+            metadata_scores[match["document_path"]] = match["match_score"]
+        
+        # Apply boosting to ranked documents
+        boosted_docs = []
+        for doc in ranked_documents:
+            doc_path = doc.get("document_path", "")
+            boost_score = metadata_scores.get(doc_path, 0)
+            
+            if boost_score > 0:
+                # Boost documents with metadata matches
+                # Increase their relevance score and move them higher
+                doc = doc.copy()  # Don't modify original
+                original_score = doc.get("avg_relevance", 0.0)
+                boosted_score = original_score + (0.3 * boost_score)  # Add significant boost
+                doc["avg_relevance"] = min(boosted_score, 1.0)  # Cap at 1.0
+                doc["metadata_boost"] = boost_score
+                
+                # Insert boosted documents at the front
+                boosted_docs.insert(0, doc)
+            else:
+                # Non-boosted documents go at the end
+                boosted_docs.append(doc)
+        
+        return boosted_docs
     
     def cleanup(self) -> None:
         """Cleanup plugin resources."""
