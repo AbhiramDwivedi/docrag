@@ -51,8 +51,35 @@ def get_agent():
     global _agent
     if _agent is None:
         try:
-            from backend.src.querying.agents.factory import create_phase3_agent
-            _agent = create_phase3_agent()  # Use Phase III agent with knowledge graph
+            from backend.src.querying.agents.agent import Agent
+            from backend.src.querying.agents.registry import PluginRegistry
+            from backend.src.querying.agents.plugins.semantic_search import SemanticSearchPlugin
+            from backend.src.querying.agents.plugins.metadata_commands import MetadataCommandsPlugin
+            from backend.src.querying.agents.plugins.document_relationships import DocumentRelationshipPlugin
+            from backend.src.querying.agents.plugins.comprehensive_reporting import ComprehensiveReportingPlugin
+            from backend.src.querying.agents.plugins.knowledge_graph import KnowledgeGraphPlugin
+            
+            # Create registry and register all plugins directly
+            registry = PluginRegistry()
+            
+            plugins = [
+                ("semantic_search", SemanticSearchPlugin),
+                ("metadata_commands", MetadataCommandsPlugin),
+                ("document_relationships", DocumentRelationshipPlugin),
+                ("comprehensive_reporting", ComprehensiveReportingPlugin),
+                ("knowledge_graph", KnowledgeGraphPlugin)
+            ]
+            
+            for plugin_name, plugin_class in plugins:
+                try:
+                    plugin_instance = plugin_class()
+                    registry.register(plugin_instance)
+                except Exception as e:
+                    # Don't fail completely if one plugin fails to load
+                    pass
+            
+            # Create Agent directly with OrchestratorAgent integration
+            _agent = Agent(registry)
         except ImportError as e:
             # Handle missing dependencies gracefully
             print(f"Warning: Could not load agent dependencies: {e}")
