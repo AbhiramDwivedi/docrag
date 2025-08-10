@@ -51,7 +51,7 @@ def get_agent():
     global _agent
     if _agent is None:
         try:
-            from querying.agents.factory import create_phase3_agent
+            from backend.src.querying.agents.factory import create_phase3_agent
             _agent = create_phase3_agent()  # Use Phase III agent with knowledge graph
         except ImportError as e:
             # Handle missing dependencies gracefully
