@@ -18,14 +18,14 @@ from .plugins.knowledge_graph import KnowledgeGraphPlugin
 logger = logging.getLogger(__name__)
 
 
-def create_phase3_agent() -> Agent:
-    """Create an agent with all Phase III capabilities.
+def create_full_agent() -> Agent:
+    """Create an agent with all available capabilities.
     
     This agent includes all plugins: semantic search, metadata commands,
     document relationships, comprehensive reporting, and knowledge graph.
     
     Returns:
-        Configured Agent instance with Phase III capabilities
+        Configured Agent instance with full capabilities
     """
     registry = PluginRegistry()
     
@@ -42,23 +42,23 @@ def create_phase3_agent() -> Agent:
         try:
             plugin_instance = plugin_class()
             registry.register(plugin_instance)
-            logger.info(f"Registered Phase III plugin: {plugin_name}")
+            logger.info(f"Registered plugin: {plugin_name}")
         except Exception as e:
             logger.error(f"Failed to register plugin {plugin_name}: {e}")
     
     agent = Agent(registry)
     
-    logger.info(f"Created Phase III agent with {registry.get_plugin_count()} plugins")
+    logger.info(f"Created full-featured agent with {registry.get_plugin_count()} plugins")
     logger.info(f"Available capabilities: {agent.get_capabilities()}")
     
     return agent
 
 
 def create_enhanced_agent() -> Agent:
-    """Create an agent with enhanced metadata functionality (Phase II).
+    """Create an agent with enhanced metadata functionality.
     
-    This agent uses the new structured metadata commands plugin instead
-    of the old NLP-based metadata plugin.
+    This agent uses structured metadata commands for advanced document
+    discovery and analysis.
     
     Returns:
         Configured Agent instance with semantic search and enhanced metadata plugins
@@ -74,10 +74,9 @@ def create_enhanced_agent() -> Agent:
         logger.error(f"Failed to register semantic search plugin: {e}")
     
     try:
-        # Use the new structured metadata commands plugin
         metadata_plugin = MetadataCommandsPlugin()
         registry.register(metadata_plugin)
-        logger.info("Registered enhanced metadata commands plugin")
+        logger.info("Registered metadata commands plugin")
     except Exception as e:
         logger.error(f"Failed to register metadata commands plugin: {e}")
     
@@ -124,7 +123,7 @@ def create_knowledge_graph_agent() -> Agent:
 
 
 def create_default_agent() -> Agent:
-    """Create an agent with the default set of plugins (Phase II).
+    """Create an agent with the default set of plugins.
     
     Returns:
         Configured Agent instance with semantic search and metadata plugins
@@ -176,7 +175,7 @@ def create_agent_with_plugins(plugin_names: Optional[list] = None) -> Agent:
 
 
 def create_minimal_agent() -> Agent:
-    """Create a minimal agent with only semantic search (Phase I).
+    """Create a minimal agent with only semantic search capability.
     
     Returns:
         Minimal agent instance with only semantic search
