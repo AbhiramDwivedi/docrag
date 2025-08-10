@@ -223,14 +223,21 @@ class DiscoveryAgent(BaseAgent):
         # Extract search terms from query if not specified
         query = base_params.get("query", context.query)
         
-        # Extract actual search term from natural language query
-        search_term = self._extract_search_term(query)
-        
-        # Default to find_files operation for discovery
-        params = {
-            "operation": "find_files",
-            "filename_pattern": search_term  # Use extracted search term
-        }
+        # Determine search strategy based on query type
+        if self._is_filename_query(query):
+            # Extract actual search term from natural language query for filename matching
+            search_term = self._extract_search_term(query)
+            params = {
+                "operation": "find_files",
+                "filename_pattern": search_term
+            }
+        else:
+            # Use semantic search for conceptual queries
+            params = {
+                "operation": "semantic_search",
+                "query": query,
+                "count": 50
+            }
         
         # Merge with any specific parameters from the step
         params.update(base_params)
@@ -241,6 +248,42 @@ class DiscoveryAgent(BaseAgent):
         
         self.agent_logger.debug(f"Prepared discovery params: {params}")
         return params
+    
+    def _is_filename_query(self, query: str) -> bool:
+        """Determine if query is asking for a specific filename vs. conceptual content.
+        
+        Args:
+            query: Natural language query
+            
+        Returns:
+            True if query appears to be asking for a specific file by name
+        """
+        query_lower = query.lower()
+        
+        # Patterns that indicate filename queries
+        filename_indicators = [
+            "file with name",
+            "file named",
+            "file called",
+            "find the file",
+            "named omaha",  # specific examples
+            "called omaha",
+            "name omaha"
+        ]
+        
+        # Check for filename indicator patterns
+        for indicator in filename_indicators:
+            if indicator in query_lower:
+                return True
+        
+        # Check if query mentions specific file extensions
+        file_extensions = ['.pdf', '.docx', '.xlsx', '.pptx', '.txt', '.doc', '.xls', '.ppt']
+        for ext in file_extensions:
+            if ext in query_lower:
+                return True
+        
+        # If none of these patterns match, assume it's a conceptual query
+        return False
     
     def _extract_search_term(self, query: str) -> str:
         """Extract the actual search term from a natural language query.
