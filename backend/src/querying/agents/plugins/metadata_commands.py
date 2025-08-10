@@ -17,8 +17,8 @@ from enum import Enum
 # Add parent directories to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
 
-from ..plugin import Plugin, PluginInfo
-from shared.config import get_settings
+from backend.src.querying.agents.plugin import Plugin, PluginInfo
+from backend.src.shared.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -316,6 +316,21 @@ class MetadataCommandsPlugin(Plugin):
         # Path filtering
         path_contains = params.get("path_contains")
         name_contains = params.get("name_contains")
+        
+        # Support filename_pattern parameter (legacy/alternate name for name_contains)
+        filename_pattern = params.get("filename_pattern")
+        if filename_pattern and not name_contains:
+            name_contains = filename_pattern
+        
+        # Keywords filtering - convert to name_contains if provided
+        keywords = params.get("keywords")
+        if keywords and not name_contains:
+            if isinstance(keywords, list):
+                # Join multiple keywords with OR logic by using the first one
+                # TODO: Could be enhanced to support multiple keyword search
+                name_contains = keywords[0] if keywords else None
+            elif isinstance(keywords, str):
+                name_contains = keywords
         
         # Email metadata
         sender_email = params.get("sender_email")

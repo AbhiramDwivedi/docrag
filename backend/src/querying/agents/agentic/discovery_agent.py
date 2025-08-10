@@ -223,10 +223,13 @@ class DiscoveryAgent(BaseAgent):
         # Extract search terms from query if not specified
         query = base_params.get("query", context.query)
         
+        # Extract actual search term from natural language query
+        search_term = self._extract_search_term(query)
+        
         # Default to find_files operation for discovery
         params = {
             "operation": "find_files",
-            "query": query
+            "filename_pattern": search_term  # Use extracted search term
         }
         
         # Merge with any specific parameters from the step
@@ -238,6 +241,49 @@ class DiscoveryAgent(BaseAgent):
         
         self.agent_logger.debug(f"Prepared discovery params: {params}")
         return params
+    
+    def _extract_search_term(self, query: str) -> str:
+        """Extract the actual search term from a natural language query.
+        
+        Args:
+            query: Natural language query
+            
+        Returns:
+            Extracted search term
+        """
+        # Convert to lowercase for pattern matching
+        query_lower = query.lower()
+        
+        # Common patterns for file search queries
+        patterns = [
+            r'file.*name[d\s]*[\'"]*([^\'"\s]+)[\'"]*',  # "file named X" or "file name X"
+            r'find.*file.*[\'"]*([^\'"\s]+)[\'"]*',      # "find file X"
+            r'named.*[\'"]*([^\'"\s]+)[\'"]*',           # "named X"
+            r'called.*[\'"]*([^\'"\s]+)[\'"]*',          # "called X"
+            r'with.*name.*[\'"]*([^\'"\s]+)[\'"]*',      # "with name X"
+        ]
+        
+        import re
+        for pattern in patterns:
+            match = re.search(pattern, query_lower)
+            if match:
+                return match.group(1)
+        
+        # Fallback: look for quoted terms
+        quoted_match = re.search(r'[\'"]+([^\'"\s]+)[\'"]+', query)
+        if quoted_match:
+            return quoted_match.group(1)
+        
+        # Last resort: extract likely filename terms (avoid common words)
+        words = query.split()
+        stop_words = {'find', 'the', 'file', 'with', 'name', 'named', 'called', 'in', 'it', 'a', 'an', 'and', 'or'}
+        for word in words:
+            clean_word = word.strip('.,!?()[]{}"\';:')
+            if clean_word.lower() not in stop_words and len(clean_word) > 2:
+                return clean_word
+        
+        # If all else fails, return the original query
+        return query
     
     def _process_discovery_results(self, result: Dict[str, Any], 
                                  context: AgentContext) -> List[Dict[str, Any]]:
@@ -252,7 +298,24 @@ class DiscoveryAgent(BaseAgent):
         """
         discovered_docs = []
         
-        # Extract document information from metadata plugin response
+        # First try to extract from structured data response
+        data = result.get("data", {})
+        if data and "files" in data:
+            # Use structured file data from metadata plugin
+            files = data["files"]
+            for file_info in files:
+                discovered_docs.append({
+                    "path": file_info.get("path", ""),
+                    "name": file_info.get("name", ""),
+                    "source": "metadata_discovery",
+                    "modified": file_info.get("modified"),
+                    "size": file_info.get("size"),
+                    "type": file_info.get("type")
+                })
+            
+            return discovered_docs
+        
+        # Fallback: Extract document information from text response
         response = result.get("response", "")
         
         # Parse response for file paths and metadata
