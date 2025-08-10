@@ -1,8 +1,7 @@
 """Agent factory for creating and configuring DocQuest agents.
 
 This module provides a convenient way to create and configure agents
-with the standard set of plugins for DocQuest functionality, including
-Phase III advanced intelligence capabilities.
+with the standard set of plugins for DocQuest functionality.
 """
 
 import logging
@@ -29,7 +28,7 @@ def create_full_agent() -> Agent:
     """
     registry = PluginRegistry()
     
-    # Register all Phase III plugins
+    # Register all available plugins
     plugins = [
         ("semantic_search", SemanticSearchPlugin),
         ("metadata_commands", MetadataCommandsPlugin),
