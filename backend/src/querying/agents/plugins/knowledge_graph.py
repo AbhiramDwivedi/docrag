@@ -13,7 +13,7 @@ from typing import Dict, Any, List, Optional
 # Add parent directories to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
 
-from querying.agents.plugin import Plugin, PluginInfo
+from ..plugin import Plugin, PluginInfo
 from ingestion.storage.knowledge_graph import KnowledgeGraph
 from shared.config import settings
 

@@ -6,6 +6,7 @@ import re
 from typing import List, Optional, Dict, Any
 from .registry import PluginRegistry
 from .plugin import Plugin
+from .agentic.orchestrator_agent import OrchestratorAgent
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,9 @@ class Agent:
     
     The agent coordinates multiple plugins to process natural language queries
     and provide comprehensive responses about document collections.
+    
+    This agent now uses an agentic architecture with intelligent multi-step reasoning
+    while maintaining backward compatibility with the existing plugin system.
     """
     
     def __init__(self, registry: Optional[PluginRegistry] = None):
@@ -34,6 +38,12 @@ class Agent:
         self._last_plugins_used = []
         self._last_execution_time = 0.0
         self._reasoning_trace = []
+        
+        # Initialize the agentic orchestrator for intelligent reasoning
+        self.orchestrator = OrchestratorAgent(self.registry)
+        
+        # Feature flag for agentic mode (can be disabled for compatibility)
+        self.use_agentic_mode = True
     
     def process_query(self, question: str) -> str:
         """Process natural language query and return response.
@@ -50,50 +60,71 @@ class Agent:
         self._reasoning_trace = []
         
         try:
-            # Classify query and determine appropriate plugins
-            classification_logger.info(f"Agent classification: analyzing query type")
-            plugins_to_use = self._classify_query(question)
+            # Use agentic orchestrator for intelligent multi-step reasoning
+            if self.use_agentic_mode:
+                classification_logger.info("Using agentic orchestrator for intelligent reasoning")
+                response = self.orchestrator.process_query(question)
+                
+                # Update legacy tracking for compatibility
+                self._last_execution_time = time.time() - start_time
+                timing_logger.info(f"Total execution time: {self._last_execution_time:.2f}s")
+                
+                return response
             
-            if not plugins_to_use:
-                classification_logger.info("No suitable plugins found for query")
-                return "No relevant information found."
-            
-            classification_logger.info(f"Selected plugins: {', '.join(plugins_to_use)}")
-            
-            # Execute plugins and collect results
-            results = []
-            for plugin_name in plugins_to_use:
-                plugin = self.registry.get_plugin(plugin_name)
-                if plugin:
-                    try:
-                        execution_logger.info(f"Executing plugin: {plugin_name}")
-                        self._reasoning_trace.append(f"Executing plugin: {plugin_name}")
-                        params = self._prepare_params(plugin_name, question)
-                        
-                        if plugin.validate_params(params):
-                            result = plugin.execute(params)
-                            results.append((plugin_name, result))
-                            self._last_plugins_used.append(plugin_name)
-                            execution_logger.info(f"Plugin {plugin_name} completed successfully")
-                        else:
-                            logger.warning(f"Invalid parameters for plugin {plugin_name}")
-                            execution_logger.info(f"Plugin {plugin_name} failed: invalid parameters")
-                    except Exception as e:
-                        logger.error(f"Error executing plugin {plugin_name}: {e}")
-                        execution_logger.info(f"Plugin {plugin_name} failed: {e}")
-                        self._reasoning_trace.append(f"Plugin {plugin_name} failed: {e}")
-            
-            # Synthesize final response
-            synthesis_logger.info(f"Synthesizing response from {len(results)} plugin results")
-            response = self._synthesize_response(question, results)
-            
-            self._last_execution_time = time.time() - start_time
-            timing_logger.info(f"Total execution time: {self._last_execution_time:.2f}s")
-            return response
-            
+            # Fallback to legacy static classification if agentic mode is disabled
+            else:
+                classification_logger.info("Using legacy static classification")
+                return self._legacy_process_query(question, start_time)
+                
         except Exception as e:
             logger.error(f"Error processing query '{question}': {e}")
             return f"❌ Error processing query: {e}"
+    
+    def _legacy_process_query(self, question: str, start_time: float) -> str:
+        """Legacy query processing using static classification.
+        
+        This method preserves the original behavior for backward compatibility.
+        """
+        # Classify query and determine appropriate plugins
+        classification_logger.info(f"Agent classification: analyzing query type")
+        plugins_to_use = self._classify_query(question)
+        
+        if not plugins_to_use:
+            classification_logger.info("No suitable plugins found for query")
+            return "No relevant information found."
+        
+        classification_logger.info(f"Selected plugins: {', '.join(plugins_to_use)}")
+        
+        # Execute plugins and collect results
+        results = []
+        for plugin_name in plugins_to_use:
+            plugin = self.registry.get_plugin(plugin_name)
+            if plugin:
+                try:
+                    execution_logger.info(f"Executing plugin: {plugin_name}")
+                    self._reasoning_trace.append(f"Executing plugin: {plugin_name}")
+                    params = self._prepare_params(plugin_name, question)
+                    
+                    if plugin.validate_params(params):
+                        result = plugin.execute(params)
+                        results.append((plugin_name, result))
+                        self._last_plugins_used.append(plugin_name)
+                        execution_logger.info(f"Plugin {plugin_name} completed successfully")
+                    else:
+                        logger.warning(f"Invalid parameters for plugin {plugin_name}")
+                        execution_logger.info(f"Plugin {plugin_name} failed: invalid parameters")
+                except Exception as e:
+                    logger.error(f"Error executing plugin {plugin_name}: {e}")
+                    execution_logger.info(f"Plugin {plugin_name} failed: {e}")
+                    self._reasoning_trace.append(f"Plugin {plugin_name} failed: {e}")
+        
+        # Synthesize final response
+        synthesis_logger.info(f"Synthesizing response from {len(results)} plugin results")
+        response = self._synthesize_response(question, results)
+        
+        self._last_execution_time = time.time() - start_time
+        timing_logger.info(f"Total execution time: {self._last_execution_time:.2f}s")
+        return response
     
     def get_capabilities(self) -> List[str]:
         """Return list of agent capabilities for introspection.
@@ -104,7 +135,28 @@ class Agent:
         capabilities = []
         for plugin_info in self.registry._plugin_info.values():
             capabilities.extend(plugin_info.capabilities)
+        
+        # Add agentic capabilities
+        if self.use_agentic_mode:
+            capabilities.extend([
+                "multi_step_reasoning",
+                "intent_analysis", 
+                "adaptive_execution",
+                "cross_step_context",
+                "dynamic_planning"
+            ])
+            
         return list(set(capabilities))  # Remove duplicates
+    
+    def set_agentic_mode(self, enabled: bool) -> None:
+        """Enable or disable agentic mode.
+        
+        Args:
+            enabled: True to use agentic orchestrator, False for legacy behavior
+        """
+        self.use_agentic_mode = enabled
+        mode = "agentic" if enabled else "legacy"
+        logger.info(f"Agent mode set to: {mode}")
     
     def explain_reasoning(self) -> Optional[str]:
         """Return explanation of last query processing steps.
@@ -118,16 +170,23 @@ class Agent:
         explanation = [
             f"Query: {self._last_query}",
             f"Execution time: {self._last_execution_time:.2f}s",
-            f"Plugins used: {', '.join(self._last_plugins_used) if self._last_plugins_used else 'None'}",
-            "",
-            "Reasoning trace:"
+            f"Mode: {'Agentic' if self.use_agentic_mode else 'Legacy'}",
         ]
         
-        if self._reasoning_trace:
-            for i, step in enumerate(self._reasoning_trace, 1):
-                explanation.append(f"  {i}. {step}")
+        if self.use_agentic_mode:
+            explanation.append("Processing: Multi-step intelligent reasoning with orchestrator")
+            # Note: Detailed reasoning would come from orchestrator's planning
+            explanation.append("Features: Intent analysis, adaptive planning, cross-step context")
         else:
-            explanation.append("  No reasoning steps recorded")
+            explanation.append(f"Plugins used: {', '.join(self._last_plugins_used) if self._last_plugins_used else 'None'}")
+            explanation.append("")
+            explanation.append("Reasoning trace:")
+            
+            if self._reasoning_trace:
+                for i, step in enumerate(self._reasoning_trace, 1):
+                    explanation.append(f"  {i}. {step}")
+            else:
+                explanation.append("  No reasoning steps recorded")
         
         return "\n".join(explanation)
     

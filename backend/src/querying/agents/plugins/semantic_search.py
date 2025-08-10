@@ -12,7 +12,7 @@ from typing import Dict, Any
 # Add parent directories to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
 
-from querying.agents.plugin import Plugin, PluginInfo
+from ..plugin import Plugin, PluginInfo
 from ingestion.processors.embedder import embed_texts
 from ingestion.storage.vector_store import VectorStore
 from shared.config import settings
