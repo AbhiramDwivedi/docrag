@@ -48,6 +48,13 @@ temp_*.md
 *_report.py
 *_analysis.py
 *_status.py
+
+# Investigation and debugging scripts - contain private data
+_tmp_*.py
+_check_*.py
+_get_*.py
+*_debug.py
+validate_functionality.py
 *_summary.py
 debug.log
 *.log
