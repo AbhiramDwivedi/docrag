@@ -199,9 +199,9 @@ class TestGoldenRetrieval:
         conn.close()
     
     @pytest.mark.parametrize("query", [
-        {"id": "test_acme", "query": "what is Acme?", "expected_doc": "acme_overview.txt"},
-        {"id": "test_bolt", "query": "what is BOLT?", "expected_doc": "bolt_spec.md"},
-        {"id": "test_globex", "query": "tell me about Globex", "expected_doc": "globex_financial.md"},
+        {"id": "test_acme", "query": "what is Acme?", "expected_doc": "text/acme_overview.txt"},
+        {"id": "test_bolt", "query": "what is BOLT?", "expected_doc": "text/bolt_spec.md"},
+        {"id": "test_globex", "query": "tell me about Globex", "expected_doc": "text/globex_financial.md"},
     ])
     def test_semantic_retrieval_basic(self, query, test_artifacts_path, artifacts_exist):
         """Test basic semantic retrieval for key entities."""
@@ -260,7 +260,7 @@ class TestGoldenRetrieval:
             # FTS5 is available and working
             assert len(results) > 0
             found_files = [result['file_path'] for result in results]
-            assert "acme_overview.txt" in found_files
+            assert "text/acme_overview.txt" in found_files
         else:
             pytest.skip("FTS5 not available in this SQLite build")
     
@@ -270,10 +270,10 @@ class TestGoldenRetrieval:
         
         # Test some keyword queries
         test_queries = [
-            ("Contoso", "contoso_partnership.txt"),
-            ("BOLT", "bolt_spec.md"),
-            ("Globex", "globex_financial.md"),
-            ("Initech", "initech_roadmap.txt"),
+            ("Contoso", "text/contoso_partnership.txt"),
+            ("BOLT", "text/bolt_spec.md"),
+            ("Globex", "text/globex_financial.md"),
+            ("Initech", "text/initech_roadmap.txt"),
         ]
         
         for keyword, expected_file in test_queries:
@@ -317,12 +317,12 @@ class TestGoldenRetrieval:
         
         # Test queries that should find each file
         file_queries = {
-            "acme_overview.txt": "Acme corporation",
-            "bolt_spec.md": "BOLT protocol",
-            "contoso_partnership.txt": "Contoso partnership",
-            "globex_financial.md": "Globex financial",
-            "initech_roadmap.txt": "Initech workflow",
-            "reltora_integration.md": "Reltora gateway"
+            "text/acme_overview.txt": "Acme corporation",
+            "text/bolt_spec.md": "BOLT protocol",
+            "text/contoso_partnership.txt": "Contoso partnership",
+            "text/globex_financial.md": "Globex financial",
+            "text/initech_roadmap.txt": "Initech workflow",
+            "text/reltora_integration.md": "Reltora gateway"
         }
         
         found_files = set()

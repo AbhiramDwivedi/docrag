@@ -237,10 +237,9 @@ class TestFTS5Index:
         try:
             create_fts5_index(db_path, sample_documents)
             
-            # Empty query should return no results or all results
-            results = search_fts5(db_path, "")
-            # FTS5 typically requires non-empty queries
-            assert isinstance(results, list)
+            # Empty query should cause an error in FTS5
+            with pytest.raises(sqlite3.OperationalError):
+                search_fts5(db_path, "")
             
         finally:
             Path(db_path).unlink(missing_ok=True)
