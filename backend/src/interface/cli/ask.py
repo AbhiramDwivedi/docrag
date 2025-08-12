@@ -51,8 +51,8 @@ def get_agent():
     global _agent
     if _agent is None:
         try:
-            from querying.agents.factory import create_phase3_agent
-            _agent = create_phase3_agent()  # Use Phase III agent with knowledge graph
+            from querying.agents.factory import create_full_agent
+            _agent = create_full_agent()  # Use full-featured agent
         except ImportError as e:
             # Handle missing dependencies gracefully
             print(f"Warning: Could not load agent dependencies: {e}")

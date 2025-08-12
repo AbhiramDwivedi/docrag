@@ -374,3 +374,146 @@ curl -X POST "http://localhost:8000/query" \
 - Web UI for team access (optional/planned)
 - Automated reindexing workflows
 - Health monitoring and logging
+
+# Phase 3: Agentic Querying Architecture (Current)
+
+DocQuest now supports an agentic architecture for querying. Instead of a single CLI path calling vector search directly, a master Orchestrator coordinates specialist agents and plugins via an execution plan derived from an LLM-based intent analyzer.
+
+### Key Components
+
+- Orchestrator Agent (`querying/agents/agentic/orchestrator_agent.py`)
+  - Runs the LLM-based Intent Analyzer (`llm_intent_analyzer.py`)
+  - Builds an Execution Plan (`execution_plan.py`) with typed steps
+  - Routes steps to specialist agents; performs final response formatting
+- Specialist Agents
+  - Discovery Agent (`agentic/discovery_agent.py`): document discovery, metadata retrieval, path resolution
+  - Analysis Agent (`agentic/analysis_agent.py`): content extraction, comparison, synthesis
+  - Knowledge Graph Agent (`agentic/knowledge_graph_agent.py`): entity exploration and relationships
+- Plugin Registry (`querying/agents/registry.py`)
+  - Hosts pluggable capabilities invoked by agents
+- Core Plugins (see “Plugin Catalog” below)
+  - Semantic Search, Metadata Commands, Document Relationships, Comprehensive Reporting, Knowledge Graph
+
+### High-level Data Flow
+
+```mermaid
+flowchart TB
+    subgraph UI[User Interfaces]
+        CLI[CLI]
+        API[REST API]
+    end
+
+    subgraph Agentic[Agentic Querying]
+        ORCH[Orchestrator\nIntent analysis + plan]
+        DISC[Discovery Agent]
+        AN[Analysis Agent]
+        KGA[Knowledge Graph Agent]
+        REG[Plugin Registry]
+    end
+
+    subgraph Plugins[Plugins]
+        SEM[Semantic Search]
+        META[Metadata Commands]
+        REL[Document Relationships]
+        REP[Comprehensive Reporting]
+        KG[Knowledge Graph]
+    end
+
+    subgraph Storage[Storage]
+        VS[FAISS Vector Index]
+        DB[SQLite Metadata DB]
+    end
+
+    UI --> ORCH
+    ORCH --> DISC
+    ORCH --> AN
+    ORCH --> KGA
+    DISC --> REG
+    AN --> REG
+    KGA --> REG
+    REG --> SEM
+    REG --> META
+    REG --> REL
+    REG --> REP
+    REG --> KG
+
+    SEM --> VS
+    SEM --> DB
+    META --> DB
+    REL --> VS
+    REL --> DB
+    KG --> DB
+```
+
+### Execution Plan: Sequential vs Parallel
+
+- Always sequential:
+  - Intent Analysis → Plan Creation → Step Dispatch
+  - Final Synthesis waits for upstream steps
+- Often parallelizable (configured by agent implementations):
+  - Within discovery, run metadata and semantic searches in parallel
+  - Relationship analysis and knowledge graph exploration can run in parallel after initial discovery
+
+Example sequence with explicit parallel blocks:
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant O as Orchestrator
+    participant IA as Intent Analyzer
+    participant D as Discovery Agent
+    participant M as Metadata Plugin
+    participant S as Semantic Plugin
+    participant A as Analysis Agent
+    participant LLM as OpenAI
+
+    U->>O: Natural language question
+    O->>IA: Analyze intent
+    IA-->>O: Intent + confidence
+    O->>O: Create execution plan
+
+    par Discovery: metadata and semantic
+        O->>D: Step: DISCOVER_DOCUMENT
+        D->>M: find_files(name_contains/filters)
+        D->>S: semantic_search(question, include_metadata_search=true)
+        M-->>D: File candidates (paths, metadata)
+        S-->>D: Relevant sources (ranked docs)
+    end
+
+    O->>A: Steps: EXTRACT_CONTENT / SYNTHESIZE_FINDINGS
+    A->>LLM: Context + instructions
+    LLM-->>A: Answer draft
+    A-->>O: Synthesis + citations
+    O-->>U: Final response
+```
+
+### Plugin Catalog
+
+- Semantic Search Plugin (`plugins/semantic_search.py`)
+  - Capabilities: semantic_search, document_query, content_analysis, vector_search, document_level_retrieval, context_expansion, source_attribution, multi_stage_search, document_ranking
+  - Notes: FAISS + SQLite, optional metadata boosting, document-level context expansion
+- Metadata Commands Plugin (`plugins/metadata_commands.py`)
+  - Capabilities: find_files, metadata_query, file_statistics, collection_analysis, file_counts, file_types, get_latest_files, find_files_by_content, get_file_stats, get_file_count, get_file_types
+  - Notes: Structured SQL over the enhanced files/email schema
+- Document Relationships Plugin (`plugins/document_relationships.py`)
+  - Capabilities: document_similarity, document_clustering, cross_reference_detection, thematic_grouping, content_evolution_tracking, citation_analysis, relationship_analysis
+- Comprehensive Reporting Plugin (`plugins/comprehensive_reporting.py`)
+  - Capabilities: collection_summary, thematic_analysis_report, activity_report, cross_document_insights, custom_reports, trend_analysis, usage_analytics, document_health_report
+- Knowledge Graph Plugin (`plugins/knowledge_graph.py`)
+  - Capabilities: knowledge_graph, entity_search, relationship_exploration, graph_statistics, entity_extraction
+
+### Agents and Step Types
+
+- Step types (subset): DISCOVER_DOCUMENT, RETURN_METADATA, RETURN_FILE_PATH, EXTRACT_CONTENT, COMPARE_ACROSS_DOCS, FIND_RELATIONSHIPS, SYNTHESIZE_FINDINGS
+- Typical routing:
+  - Discovery → Metadata/Find Files + Semantic Search
+  - Analysis → Extraction/Comparison/Final synthesis
+  - Knowledge Graph → Entity/relationship context
+
+### Ingestion (unchanged, summarized)
+
+Ingestion remains a modular pipeline: Extractors → Chunker → Embedder → VectorStore/SQLite. See earlier sections for details. The agentic querying layer is additive and sits on top of the same storage.
+
+---
+
+This section reflects the current agentic architecture and clarifies which parts can run in parallel versus those that are strictly sequential.
