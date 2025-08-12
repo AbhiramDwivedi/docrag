@@ -1,7 +1,7 @@
 """Plugin registry for managing and discovering available plugins."""
 
 import logging
-from typing import Dict, List, Optional, Type
+from typing import Dict, List, Optional
 from .plugin import Plugin, PluginInfo
 
 logger = logging.getLogger(__name__)
@@ -36,6 +36,19 @@ class PluginRegistry:
         self._plugin_info[info.name] = info
         
         logger.info(f"Registered plugin: {info.name} v{info.version}")
+    
+    def register_plugin(self, name: str, plugin: Plugin) -> None:
+        """Register a plugin with the agent framework (backward compatibility).
+        
+        Args:
+            name: Plugin name (for backward compatibility, actual name comes from plugin.get_info())
+            plugin: Plugin instance to register
+            
+        Raises:
+            ValueError: If plugin name conflicts with existing plugin
+        """
+        # Use the new register method
+        self.register(plugin)
     
     def unregister(self, plugin_name: str) -> bool:
         """Unregister a plugin from the framework.

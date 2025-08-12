@@ -154,11 +154,75 @@ class DiscoveryAgent(BaseAgent):
                     confidence=0.9
                 )
             
-            # No documents in context, perform fresh metadata search
+            # No documents in context and this is a metadata query, use metadata plugin directly
+            intent = step.parameters.get("intent", "")
+            if intent == "metadata_query":
+                return self._execute_metadata_command(step, context)
+            
+            # Otherwise, perform fresh document discovery
             return self._discover_documents(step, context)
             
         except Exception as e:
             return self._create_failure_result(step, f"Metadata retrieval error: {e}")
+    
+    def _execute_metadata_command(self, step: ExecutionStep, context: AgentContext) -> StepResult:
+        """Execute metadata commands directly using the metadata plugin.
+        
+        Args:
+            step: ExecutionStep requesting metadata
+            context: AgentContext with query information
+            
+        Returns:
+            StepResult with metadata command results
+        """
+        self.agent_logger.info("Executing metadata command")
+        
+        try:
+            # Find the metadata plugin
+            metadata_plugin = self.registry.get_plugin("metadata")
+            
+            if not metadata_plugin:
+                return self._create_failure_result(step, "Metadata plugin not found")
+            
+            # Determine appropriate metadata operation based on query
+            query = step.parameters.get("query", context.query).lower()
+            
+            if any(term in query for term in ["how many", "count", "number of"]):
+                operation = "get_file_count"
+            elif any(term in query for term in ["recent", "latest", "newest"]):
+                operation = "get_latest_files"
+            elif any(term in query for term in ["types", "file types", "extensions"]):
+                operation = "get_file_types"
+            elif any(term in query for term in ["stats", "statistics", "summary"]):
+                operation = "get_file_stats"
+            elif any(term in query for term in ["list", "show", "all files", "all documents"]):
+                operation = "find_files"
+            else:
+                # Default to file listing for general metadata queries
+                operation = "find_files"
+            
+            # Execute the metadata operation
+            result = metadata_plugin.execute({"operation": operation})
+            
+            # Extract response from plugin result
+            if isinstance(result, dict) and "response" in result:
+                formatted_response = result["response"]
+            else:
+                formatted_response = "Metadata operation completed"
+            
+            return self._create_success_result(
+                step,
+                {
+                    "metadata_result": result,
+                    "formatted_response": formatted_response,
+                    "operation": operation,
+                    "source": "metadata_plugin"
+                },
+                confidence=0.8
+            )
+            
+        except Exception as e:
+            return self._create_failure_result(step, f"Metadata command error: {e}")
     
     def _return_file_paths(self, step: ExecutionStep, context: AgentContext) -> StepResult:
         """Return file paths for discovered documents.

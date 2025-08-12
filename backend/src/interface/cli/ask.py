@@ -51,7 +51,7 @@ def get_agent():
     global _agent
     if _agent is None:
         try:
-            from backend.src.querying.agents.factory import create_full_agent
+            from querying.agents.factory import create_full_agent
             _agent = create_full_agent()  # Use full-featured agent
         except ImportError as e:
             # Handle missing dependencies gracefully

@@ -13,9 +13,27 @@ from typing import Dict, Any
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
 
 from ..plugin import Plugin, PluginInfo
-from backend.src.ingestion.processors.embedder import embed_texts
-from backend.src.ingestion.storage.vector_store import VectorStore
-from backend.src.shared.config import settings
+
+# Try different import approaches for the dependencies
+try:
+    from ingestion.processors.embedder import embed_texts
+    from ingestion.storage.vector_store import VectorStore
+    from shared.config import settings
+except ImportError:
+    # Fallback to absolute imports
+    try:
+        from src.ingestion.processors.embedder import embed_texts
+        from src.ingestion.storage.vector_store import VectorStore
+        from src.shared.config import settings
+    except ImportError:
+        # Last resort - relative imports from backend root
+        import os
+        backend_root = Path(__file__).parent.parent.parent.parent
+        sys.path.insert(0, str(backend_root))
+        from src.ingestion.processors.embedder import embed_texts
+        from src.ingestion.storage.vector_store import VectorStore
+        from src.shared.config import settings
+
 from openai import OpenAI
 
 logger = logging.getLogger(__name__)

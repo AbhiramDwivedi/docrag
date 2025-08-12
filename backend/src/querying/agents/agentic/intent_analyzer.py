@@ -103,9 +103,14 @@ class IntentAnalyzer:
                         r"\b(document|file)\s+(called|named|titled|about)",
                         r"\bfull\s+path\s+(for|of|to)",
                         r"\bfind\s+.*\s+(document|file|doc)",
-                        r"\bget\s+.*\s+(document|file)"
+                        r"\bget\s+.*\s+(document|file)",
+                        r"\b(find|get|show|locate)\s+(the\s+)?[a-zA-Z]+\s+(report|file|document)",
+                        r"\b(find|get|show)\s+.*\s+(report|presentation|spreadsheet|email)",
+                        r"\bwhere is\s+.*",
+                        r"\bshow me\s+.*",
+                        r"\bfind\s+(?:the\s+)?[a-zA-Z\s]+"
                     ],
-                    "keywords": ["find", "locate", "get", "show", "where", "path", "document", "file"],
+                    "keywords": ["find", "locate", "get", "show", "where", "path", "document", "file", "report"],
                     "weight": 1.0
                 }
             ],

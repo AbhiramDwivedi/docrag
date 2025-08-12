@@ -17,8 +17,15 @@ from enum import Enum
 # Add parent directories to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent))
 
-from backend.src.querying.agents.plugin import Plugin, PluginInfo
-from backend.src.shared.config import get_settings
+import sys
+from pathlib import Path
+
+# Add src to path for absolute imports
+src_path = Path(__file__).parent.parent.parent.parent
+sys.path.insert(0, str(src_path))
+
+from ..plugin import Plugin, PluginInfo
+from shared.config import get_settings
 
 logger = logging.getLogger(__name__)
 

@@ -7,7 +7,7 @@ from typing import Dict, Any, List, Optional
 from .base_agent import BaseAgent
 from .execution_plan import ExecutionPlan, ExecutionStep, StepResult, StepStatus, StepType
 from .context import AgentContext
-from .intent_analyzer import IntentAnalyzer, QueryIntent, QueryComplexity
+from .llm_intent_analyzer import IntentAnalyzer, QueryIntent, QueryComplexity
 from .discovery_agent import DiscoveryAgent
 from .analysis_agent import AnalysisAgent
 from .knowledge_graph_agent import KnowledgeGraphAgent

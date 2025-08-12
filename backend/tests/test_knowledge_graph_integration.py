@@ -3,6 +3,8 @@
 import pytest
 import tempfile
 import sys
+import gc
+import time
 from pathlib import Path
 
 # Add src to path for imports
@@ -52,32 +54,39 @@ class TestKnowledgeGraphIntegration:
         # Initialize knowledge graph
         kg = KnowledgeGraph(str(kg_path))
         
-        # Test adding entities
-        entity = Entity(
-            id="test_person_1",
-            type="person",
-            name="John Smith",
-            properties={"email": "john@test.com"},
-            confidence=0.9
-        )
-        
-        assert kg.add_entity(entity) == True
-        
-        # Test retrieving entities
-        retrieved = kg.get_entity("test_person_1")
-        assert retrieved is not None
-        assert retrieved.name == "John Smith"
-        assert retrieved.type == "person"
-        
-        # Test finding entities by type
-        persons = kg.find_entities_by_type("person")
-        assert len(persons) == 1
-        assert persons[0].name == "John Smith"
-        
-        # Test statistics
-        stats = kg.get_statistics()
-        assert stats["total_entities"] == 1
-        assert stats["entity_types"]["person"] == 1
+        try:
+            # Test adding entities
+            entity = Entity(
+                id="test_person_1",
+                type="person",
+                name="John Smith",
+                properties={"email": "john@test.com"},
+                confidence=0.9
+            )
+            
+            assert kg.add_entity(entity) == True
+            
+            # Test retrieving entities
+            retrieved = kg.get_entity("test_person_1")
+            assert retrieved is not None
+            assert retrieved.name == "John Smith"
+            assert retrieved.type == "person"
+            
+            # Test finding entities by type
+            persons = kg.find_entities_by_type("person")
+            assert len(persons) == 1
+            assert persons[0].name == "John Smith"
+            
+            # Test statistics
+            stats = kg.get_statistics()
+            assert stats["total_entities"] == 1
+            assert stats["entity_types"]["person"] == 1
+        finally:
+            # Explicit cleanup to release SQLite file locks
+            del kg
+            # Force garbage collection and brief delay for Windows file handling
+            gc.collect()
+            time.sleep(0.1)
     
     def test_knowledge_graph_entity_extraction(self, temp_dirs):
         """Test entity extraction from text."""
@@ -86,25 +95,33 @@ class TestKnowledgeGraphIntegration:
         kg = KnowledgeGraph(str(kg_path))
         kg_builder = KnowledgeGraphBuilder(kg)
         
-        test_text = "John Smith works for Acme Corp. Contact him at john@acme.com about the Budget project."
-        
-        entities, relationships = kg_builder.extract_entities_from_text(test_text, "/test/doc.txt")
-        
-        # Should extract at least person, organization, and topic entities
-        assert len(entities) >= 3
-        
-        entity_types = [e.type for e in entities]
-        assert "person" in entity_types  # john@acme.com
-        assert "organization" in entity_types  # Acme Corp
-        assert "topic" in entity_types  # Budget
-        
-        # Add entities to knowledge graph
-        for entity in entities:
-            kg.add_entity(entity)
-        
-        # Verify they were added
-        stats = kg.get_statistics()
-        assert stats["total_entities"] == len(entities)
+        try:
+            test_text = "John Smith works for Acme Corp. Contact him at john@acme.com about the Budget project."
+            
+            entities, relationships = kg_builder.extract_entities_from_text(test_text, "/test/doc.txt")
+            
+            # Should extract at least person, organization, and topic entities
+            assert len(entities) >= 3
+            
+            entity_types = [e.type for e in entities]
+            assert "person" in entity_types  # john@acme.com
+            assert "organization" in entity_types  # Acme Corp
+            assert "topic" in entity_types  # Budget
+            
+            # Add entities to knowledge graph
+            for entity in entities:
+                kg.add_entity(entity)
+            
+            # Verify they were added
+            stats = kg.get_statistics()
+            assert stats["total_entities"] == len(entities)
+        finally:
+            # Explicit cleanup to release SQLite file locks
+            del kg_builder
+            del kg
+            # Force garbage collection and brief delay for Windows file handling
+            gc.collect()
+            time.sleep(0.1)
     
     def test_ingestion_pipeline_with_knowledge_graph(self, temp_dirs, sample_document):
         """Test that ingestion pipeline populates knowledge graph."""
@@ -116,36 +133,45 @@ class TestKnowledgeGraphIntegration:
             store = VectorStore(vector_path, meta_path, dim=384)
             kg = KnowledgeGraph(str(kg_path))
             
-            # This would normally process the file, but will fail due to embedding model
-            # So we'll test the KG part directly
-            kg_builder = KnowledgeGraphBuilder(kg)
-            
-            # Read the sample document
-            content = sample_document.read_text()
-            entities, relationships = kg_builder.extract_entities_from_text(content, str(sample_document))
-            
-            for entity in entities:
-                kg.add_entity(entity)
-            
-            for relationship in relationships:
-                kg.add_relationship(relationship)
-            
-            # Verify entities were extracted and added
-            stats = kg.get_statistics()
-            assert stats["total_entities"] > 0
-            
-            # Should have person entities (emails)
-            persons = kg.find_entities_by_type("person")
-            assert len(persons) > 0
-            
-            # Should have organization entities
-            orgs = kg.find_entities_by_type("organization")
-            assert len(orgs) > 0
-            
-            # Should have topic entities
-            topics = kg.find_entities_by_type("topic")
-            assert len(topics) > 0
-            
+            try:
+                # This would normally process the file, but will fail due to embedding model
+                # So we'll test the KG part directly
+                kg_builder = KnowledgeGraphBuilder(kg)
+                
+                # Read the sample document
+                content = sample_document.read_text()
+                entities, relationships = kg_builder.extract_entities_from_text(content, str(sample_document))
+                
+                for entity in entities:
+                    kg.add_entity(entity)
+                
+                for relationship in relationships:
+                    kg.add_relationship(relationship)
+                
+                # Verify entities were extracted and added
+                stats = kg.get_statistics()
+                assert stats["total_entities"] > 0
+                
+                # Should have person entities (emails)
+                persons = kg.find_entities_by_type("person")
+                assert len(persons) > 0
+                
+                # Should have organization entities
+                orgs = kg.find_entities_by_type("organization")
+                assert len(orgs) > 0
+                
+                # Should have topic entities
+                topics = kg.find_entities_by_type("topic")
+                assert len(topics) > 0
+            finally:
+                # Explicit cleanup to release SQLite file locks
+                del kg_builder
+                del kg
+                del store
+                # Force garbage collection and brief delay for Windows file handling
+                gc.collect()
+                time.sleep(0.1)
+                
         except Exception as e:
             # If embedding fails due to network, that's okay for this test
             if "connect" in str(e).lower() or "resolve" in str(e).lower():
@@ -159,35 +185,43 @@ class TestKnowledgeGraphIntegration:
         
         # Setup knowledge graph with test data
         kg = KnowledgeGraph(str(kg_path))
-        test_entities = [
-            Entity(id="person_1", type="person", name="John Smith", properties={"email": "john@test.com"}),
-            Entity(id="org_1", type="organization", name="Acme Corp", properties={"domain": "technology"}),
-            Entity(id="topic_1", type="topic", name="Budget Planning", properties={"category": "finance"})
-        ]
         
-        for entity in test_entities:
-            kg.add_entity(entity)
-        
-        # Test plugin
-        plugin = KnowledgeGraphPlugin()
-        
-        # Test plugin info
-        info = plugin.get_info()
-        assert info.name == "knowledge_graph"
-        assert "knowledge_graph" in info.capabilities
-        assert "entity_search" in info.capabilities
-        
-        # Test parameter validation
-        assert plugin.validate_params({"operation": "get_statistics"}) == True
-        assert plugin.validate_params({"operation": "find_entities", "entity_type": "person"}) == True
-        assert plugin.validate_params({"operation": "invalid_op"}) == False
-        assert plugin.validate_params({"operation": "explore_entity"}) == False  # Missing entity_id
-        
-        # Test get_statistics operation (will not find the DB since plugin looks in default location)
-        result = plugin.execute({"operation": "get_statistics"})
-        # Should handle gracefully when KG not found
-        assert "results" in result
-        assert "metadata" in result
+        try:
+            test_entities = [
+                Entity(id="person_1", type="person", name="John Smith", properties={"email": "john@test.com"}),
+                Entity(id="org_1", type="organization", name="Acme Corp", properties={"domain": "technology"}),
+                Entity(id="topic_1", type="topic", name="Budget Planning", properties={"category": "finance"})
+            ]
+            
+            for entity in test_entities:
+                kg.add_entity(entity)
+            
+            # Test plugin
+            plugin = KnowledgeGraphPlugin()
+            
+            # Test plugin info
+            info = plugin.get_info()
+            assert info.name == "knowledge_graph"
+            assert "knowledge_graph" in info.capabilities
+            assert "entity_search" in info.capabilities
+            
+            # Test parameter validation
+            assert plugin.validate_params({"operation": "get_statistics"}) == True
+            assert plugin.validate_params({"operation": "find_entities", "entity_type": "person"}) == True
+            assert plugin.validate_params({"operation": "invalid_op"}) == False
+            assert plugin.validate_params({"operation": "explore_entity"}) == False  # Missing entity_id
+            
+            # Test get_statistics operation (will not find the DB since plugin looks in default location)
+            result = plugin.execute({"operation": "get_statistics"})
+            # Should handle gracefully when KG not found
+            assert "results" in result
+            assert "metadata" in result
+        finally:
+            # Explicit cleanup to release SQLite file locks
+            del kg
+            # Force garbage collection and brief delay for Windows file handling
+            gc.collect()
+            time.sleep(0.1)
     
     def test_knowledge_graph_plugin_with_real_data(self, temp_dirs):
         """Test knowledge graph plugin with real knowledge graph data."""
@@ -199,18 +233,18 @@ class TestKnowledgeGraphIntegration:
         
         kg = KnowledgeGraph(str(default_kg_path))
         
-        # Add test entities
-        test_entities = [
-            Entity(id="person_john", type="person", name="John Smith", properties={"role": "manager"}),
-            Entity(id="person_sarah", type="person", name="Sarah Johnson", properties={"department": "marketing"}),
-            Entity(id="org_acme", type="organization", name="Acme Corporation", properties={"industry": "tech"}),
-            Entity(id="topic_budget", type="topic", name="Budget Planning", properties={"priority": "high"})
-        ]
-        
-        for entity in test_entities:
-            kg.add_entity(entity)
-        
         try:
+            # Add test entities
+            test_entities = [
+                Entity(id="person_john", type="person", name="John Smith", properties={"role": "manager"}),
+                Entity(id="person_sarah", type="person", name="Sarah Johnson", properties={"department": "marketing"}),
+                Entity(id="org_acme", type="organization", name="Acme Corporation", properties={"industry": "tech"}),
+                Entity(id="topic_budget", type="topic", name="Budget Planning", properties={"priority": "high"})
+            ]
+            
+            for entity in test_entities:
+                kg.add_entity(entity)
+            
             plugin = KnowledgeGraphPlugin()
             
             # Test get_statistics
@@ -240,6 +274,11 @@ class TestKnowledgeGraphIntegration:
             assert any("Budget" in name for name in entity_names)
             
         finally:
+            # Explicit cleanup to release SQLite file locks
+            del kg
+            # Force garbage collection and brief delay for Windows file handling
+            gc.collect()
+            time.sleep(0.1)
             # Cleanup
             if default_kg_path.exists():
                 default_kg_path.unlink()
@@ -249,6 +288,7 @@ class TestKnowledgeGraphIntegration:
         temp_path, kg_path, vector_path, meta_path = temp_dirs
         
         # Test process_file function with kg=None (skip knowledge graph)
+        store = None
         try:
             store = VectorStore(vector_path, meta_path, dim=384)
             
@@ -271,6 +311,15 @@ class TestKnowledgeGraphIntegration:
             else:
                 # Other errors are fine as long as they're not KG-related
                 pass
+        finally:
+            # Explicit cleanup to release SQLite file locks
+            if store is not None:
+                if hasattr(store, 'conn') and store.conn:
+                    store.conn.close()
+                del store
+            # Force garbage collection and brief delay for Windows file handling
+            gc.collect()
+            time.sleep(0.1)
     
     def test_document_node_creation_and_linkage(self, temp_dirs):
         """Test DocumentNode creation and document-entity linkage."""
@@ -280,64 +329,77 @@ class TestKnowledgeGraphIntegration:
         kg = KnowledgeGraph(str(kg_path))
         kg_builder = KnowledgeGraphBuilder(kg)
         
-        # Test text with known entities
-        test_text = """
-        John Smith works for Acme Corporation. He is the project manager for the Budget Planning initiative.
-        Contact John at john.smith@acme.com for more information about the project.
-        The project involves analyzing quarterly reports and meeting with stakeholders.
-        """
-        
-        document_path = "/test/sample_document.txt"
-        
-        # Extract entities and relationships
-        entities, relationships = kg_builder.extract_entities_from_text(test_text, document_path)
-        
-        # Create DocumentNode
-        document_node = kg_builder.create_document_node(document_path, entities, test_text)
-        
-        # Verify DocumentNode properties
-        assert document_node.document_path == document_path
-        assert document_node.title == "sample_document"  # filename without extension
-        assert len(document_node.content_summary) > 0
-        assert len(document_node.entities) > 0
-        assert len(document_node.themes) > 0
-        assert document_node.metadata is not None
-        
-        # Verify entities are linked (excluding document entity)
-        non_doc_entities = [e for e in entities if e.type != 'document']
-        assert len(document_node.entities) == len(non_doc_entities)
-        
-        # Verify entity IDs match
-        expected_entity_ids = [e.id for e in non_doc_entities]
-        for entity_id in document_node.entities:
-            assert entity_id in expected_entity_ids
-        
-        # Verify themes come from entity types
-        expected_themes = list(set([e.type for e in non_doc_entities]))
-        for theme in document_node.themes:
-            assert theme in expected_themes
-        
-        # Test adding DocumentNode to KG
-        assert kg.add_document_node(document_node) == True
-        
-        # Verify we can retrieve document nodes from the database
-        import sqlite3
-        with sqlite3.connect(kg.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM document_nodes")
-            count = cursor.fetchone()[0]
-            assert count == 1
+        try:
+            # Test text with known entities
+            test_text = """
+            John Smith works for Acme Corporation. He is the project manager for the Budget Planning initiative.
+            Contact John at john.smith@acme.com for more information about the project.
+            The project involves analyzing quarterly reports and meeting with stakeholders.
+            """
             
-            cursor.execute("SELECT document_path, title, entities FROM document_nodes WHERE document_path = ?", (document_path,))
-            row = cursor.fetchone()
-            assert row is not None
-            assert row[0] == document_path
-            assert row[1] == "sample_document"
+            document_path = "/test/sample_document.txt"
             
-            # Verify entities are stored as JSON
-            import json
-            stored_entities = json.loads(row[2])
-            assert len(stored_entities) == len(document_node.entities)
+            # Extract entities and relationships
+            entities, relationships = kg_builder.extract_entities_from_text(test_text, document_path)
+            
+            # Create DocumentNode
+            document_node = kg_builder.create_document_node(document_path, entities, test_text)
+            
+            # Verify DocumentNode properties
+            assert document_node.document_path == document_path
+            assert document_node.title == "sample_document"  # filename without extension
+            assert len(document_node.content_summary) > 0
+            assert len(document_node.entities) > 0
+            assert len(document_node.themes) > 0
+            assert document_node.metadata is not None
+            
+            # Verify entities are linked (excluding document entity)
+            non_doc_entities = [e for e in entities if e.type != 'document']
+            assert len(document_node.entities) == len(non_doc_entities)
+            
+            # Verify entity IDs match
+            expected_entity_ids = [e.id for e in non_doc_entities]
+            for entity_id in document_node.entities:
+                assert entity_id in expected_entity_ids
+            
+            # Verify themes come from entity types
+            expected_themes = list(set([e.type for e in non_doc_entities]))
+            for theme in document_node.themes:
+                assert theme in expected_themes
+            
+            # Test adding DocumentNode to KG
+            assert kg.add_document_node(document_node) == True
+            
+            # Verify we can retrieve document nodes from the database
+            import sqlite3
+            test_conn = None
+            try:
+                test_conn = sqlite3.connect(kg.db_path)
+                cursor = test_conn.cursor()
+                cursor.execute("SELECT COUNT(*) FROM document_nodes")
+                count = cursor.fetchone()[0]
+                assert count == 1
+                
+                cursor.execute("SELECT document_path, title, entities FROM document_nodes WHERE document_path = ?", (document_path,))
+                row = cursor.fetchone()
+                assert row is not None
+                assert row[0] == document_path
+                assert row[1] == "sample_document"
+                
+                # Verify entities are stored as JSON
+                import json
+                stored_entities = json.loads(row[2])
+                assert len(stored_entities) == len(document_node.entities)
+            finally:
+                if test_conn:
+                    test_conn.close()
+        finally:
+            # Explicit cleanup to release SQLite file locks
+            del kg_builder
+            del kg
+            # Force garbage collection and brief delay for Windows file handling
+            gc.collect()
+            time.sleep(0.1)
     
     def test_pipeline_document_node_integration(self, temp_dirs, sample_document):
         """Test that pipeline creates DocumentNodes during ingestion."""
@@ -354,40 +416,62 @@ class TestKnowledgeGraphIntegration:
             # Mock the vector store operations to avoid network calls
             store = VectorStore(vector_path, meta_path, dim=384)
             
-            # Check initial state - should have 0 document nodes
-            import sqlite3
-            with sqlite3.connect(kg.db_path) as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT COUNT(*) FROM document_nodes")
-                initial_count = cursor.fetchone()[0]
-                assert initial_count == 0
-            
-            # This might fail on embedding, but should create document nodes
             try:
-                process_file(sample_document, store, kg)
-            except Exception as e:
-                # Ignore embedding errors, we're testing KG integration
-                if not any(term in str(e).lower() for term in ['embedding', 'model', 'network', 'connect']):
-                    raise e
-            
-            # Check that DocumentNode was created
-            with sqlite3.connect(kg.db_path) as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT COUNT(*) FROM document_nodes")
-                final_count = cursor.fetchone()[0]
-                assert final_count == 1
+                # Check initial state - should have 0 document nodes
+                import sqlite3
+                test_conn = None
+                try:
+                    test_conn = sqlite3.connect(kg.db_path)
+                    cursor = test_conn.cursor()
+                    cursor.execute("SELECT COUNT(*) FROM document_nodes")
+                    initial_count = cursor.fetchone()[0]
+                    assert initial_count == 0
+                finally:
+                    if test_conn:
+                        test_conn.close()
                 
-                # Verify document node contains expected data
-                cursor.execute("SELECT document_path, title, entities FROM document_nodes")
-                row = cursor.fetchone()
-                assert row is not None
-                assert str(sample_document) in row[0]  # document path
-                assert len(row[1]) > 0  # title
+                # This might fail on embedding, but should create document nodes
+                try:
+                    process_file(sample_document, store, kg)
+                except Exception as e:
+                    # Ignore embedding errors, we're testing KG integration
+                    if not any(term in str(e).lower() for term in ['embedding', 'model', 'network', 'connect']):
+                        raise e
                 
-                # Check entities were linked
-                import json
-                entities = json.loads(row[2])
-                assert len(entities) > 0  # Should have extracted some entities
+                # Check that DocumentNode was created
+                test_conn2 = None
+                try:
+                    test_conn2 = sqlite3.connect(kg.db_path)
+                    cursor = test_conn2.cursor()
+                    cursor.execute("SELECT COUNT(*) FROM document_nodes")
+                    final_count = cursor.fetchone()[0]
+                    assert final_count == 1
+                    
+                    # Verify document node contains expected data
+                    cursor.execute("SELECT document_path, title, entities FROM document_nodes")
+                    row = cursor.fetchone()
+                    assert row is not None
+                    assert str(sample_document) in row[0]  # document path
+                    assert len(row[1]) > 0  # title
+                    
+                    # Check entities were linked
+                    import json
+                    entities = json.loads(row[2])
+                    assert len(entities) > 0  # Should have extracted some entities
+                finally:
+                    if test_conn2:
+                        test_conn2.close()
+            finally:
+                # Explicit cleanup to release SQLite file locks
+                if hasattr(store, 'conn') and store.conn:
+                    store.conn.close()
+                del store
                 
         except ImportError:
             pytest.skip("Required modules not available for integration test")
+        finally:
+            # Explicit cleanup to release SQLite file locks
+            del kg
+            # Force garbage collection and brief delay for Windows file handling
+            gc.collect()
+            time.sleep(0.1)
