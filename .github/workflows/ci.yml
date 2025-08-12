@@ -65,3 +65,47 @@ jobs:
       run: |
         export PYTHONPATH="${PYTHONPATH}:./src"
         python -m pytest tests/ -v --tb=short
+
+  golden-test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r backend/requirements.txt
+        pip install reportlab openpyxl psutil
+        pip install pysqlite3-binary || true
+    
+    - name: Cache test artifacts
+      uses: actions/cache@v4
+      with:
+        path: tests/fixtures/artifacts_v1
+        key: artifacts-${{ hashFiles('tests/fixtures/corpus_v1/**', 'scripts/build_test_artifacts.py', 'config.test.yaml', 'backend/**/*.py') }}
+        restore-keys: |
+          artifacts-
+    
+    - name: Build test artifacts
+      run: |
+        python scripts/build_test_artifacts.py --rebuild --ci
+    
+    - name: Run golden retrieval tests
+      env:
+        DOC_RAG_CONFIG: config.test.yaml
+        PYTHONPATH: backend/src
+      run: |
+        python -m pytest tests/test_embeddings_norm.py tests/test_mmr.py tests/test_fts5.py tests/test_hybrid_merge.py tests/test_golden_retrieval.py tests/test_perf_smoke.py -v --tb=short
+    
+    - name: Upload artifacts on failure
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-artifacts-debug
+        path: tests/fixtures/artifacts_v1/
+        retention-days: 7

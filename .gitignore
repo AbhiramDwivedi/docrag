@@ -21,6 +21,10 @@ data/
 *.db
 *.index
 
+# Test artifacts (generated, not committed)
+tests/fixtures/artifacts_v1/
+tests/fixtures/*/artifacts/
+
 # IDE and editor files
 .vscode/
 .idea/
