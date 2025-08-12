@@ -1,0 +1,38 @@
+sync_root: "tests/fixtures/corpus_v1"
+db_path: "tests/fixtures/artifacts_v1/docmeta.db"
+vector_path: "tests/fixtures/artifacts_v1/vector.index"
+knowledge_graph_path: "tests/fixtures/artifacts_v1/knowledge_graph.db"
+chunk_size: 400
+overlap: 50
+embed_model: "sentence-transformers/all-MiniLM-L6-v2"
+batch_size: 16
+
+# Retrieval settings
+retrieval:
+  k: 100
+  mmr_lambda: 0.5
+  similarity_threshold: 0.3
+
+# Hybrid search settings  
+hybrid:
+  enabled: true
+  dense_weight: 0.6
+  lexical_weight: 0.4
+
+# Embedding settings for deterministic behavior
+embedding:
+  model_name: "sentence-transformers/all-MiniLM-L6-v2"
+  normalize: true
+  use_cosine: true
+  device: "cpu"
+
+# Test-specific paths
+paths:
+  data_root: "tests/fixtures/artifacts_v1"
+  corpus_root: "tests/fixtures/corpus_v1"
+
+# Deterministic settings
+deterministic:
+  seed: 42
+  force_cpu: true
+  omp_num_threads: 1
