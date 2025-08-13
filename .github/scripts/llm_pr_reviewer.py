@@ -3,6 +3,7 @@ import openai
 from github import Github
 import re
 import base64
+import requests
 
 REPO = os.environ.get("GITHUB_REPOSITORY")
 PR_NUMBER = os.environ.get("PR_NUMBER")
@@ -16,7 +17,15 @@ with open(".github/copilot-instructions.md", "r", encoding="utf-8") as f:
 g = Github(GITHUB_TOKEN)
 repo = g.get_repo(REPO)
 pr = repo.get_pull(int(PR_NUMBER))
-diff = pr.diff()
+
+# Get the diff using the raw GitHub API
+diff_url = f"https://api.github.com/repos/{REPO}/pulls/{PR_NUMBER}"
+headers = {
+    "Authorization": f"token {GITHUB_TOKEN}",
+    "Accept": "application/vnd.github.v3.diff"
+}
+diff_response = requests.get(diff_url, headers=headers)
+diff = diff_response.text if diff_response.status_code == 200 else ""
 
 # Try to find a linked issue (by convention: fixes #123 or closes #123 in PR body)
 issue_number = None
