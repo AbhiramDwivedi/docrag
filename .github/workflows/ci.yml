@@ -22,11 +22,19 @@ jobs:
         python-version: ${{ matrix.python-version }}
     
     - name: Install dependencies
-      working-directory: backend
       run: |
         python -m pip install --upgrade pip
-        pip install -e .[dev]  # Install with dev dependencies including pytest
-        pip install pyyaml  # Ensure yaml is available
+        pip install -e backend[dev]  # Install with dev dependencies including pytest
+        pip install pyyaml faiss-cpu pysqlite3-binary python-docx python-pptx reportlab openpyxl || true
+    
+    - name: Cache artifacts
+      uses: actions/cache@v4
+      with:
+        path: tests/fixtures/artifacts_v1
+        key: artifacts-${{ hashFiles('tests/fixtures/corpus_v1/**', 'scripts/build_test_artifacts.py', 'config.test.yaml', 'backend/**') }}
+    
+    - name: Build golden artifacts
+      run: python scripts/build_test_artifacts.py --rebuild --ci
     
     - name: Check import structure
       working-directory: backend
@@ -48,22 +56,22 @@ jobs:
         "
     
     - name: Validate configuration template
-      working-directory: backend
       run: |
         python -c "
         import yaml
         from pathlib import Path
-        config = yaml.safe_load(Path('src/shared/config.yaml.template').read_text())
-        required_keys = ['sync_root', 'db_path', 'vector_path', 'embed_model', 'openai_api_key']
+        config = yaml.safe_load(Path('backend/src/shared/config.yaml.template').read_text())
+        required_keys = ['sync_root', 'db_path', 'vector_path', 'embed_model']  # Removed openai_api_key for tests
         for key in required_keys:
             assert key in config, f'Missing required config key: {key}'
         print('✅ Configuration template is valid')
         "
     
     - name: Run tests
-      working-directory: backend
+      env:
+        DOC_RAG_CONFIG: config.test.yaml
       run: |
-        export PYTHONPATH="${PYTHONPATH}:./src"
+        export PYTHONPATH="${PYTHONPATH}:./backend/src"
         python -m pytest tests/ -v --tb=short
 
   golden-test:
