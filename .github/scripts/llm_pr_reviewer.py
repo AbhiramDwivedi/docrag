@@ -157,30 +157,42 @@ for path in requested:
 anchors_context = "\n".join(anchor_sections)
 
 SYSTEM_PROMPT = (
-    "You are an expert code reviewer for this repository. "
+    "You are an expert code reviewer focusing on HIGH-FIDELITY issues only. "
+    "Before flagging an issue, carefully examine the ENTIRE context including existing tests, documentation, and implementations. "
+    "Only report issues that would cause actual problems: broken functionality, missing critical tests, security vulnerabilities, "
+    "clear violations of stated requirements, poor design decisions, or incomplete implementation of requirements. "
+    "Do NOT report issues if: (1) functionality already exists elsewhere in the codebase, "
+    "(2) documentation already covers the topic adequately, (3) tests already provide sufficient coverage, "
+    "or (4) the suggestion is purely cosmetic or incremental without clear impact. "
     "Your review must ensure: correctness, completeness (meets linked issue requirements), "
     "sound design (maintainable, aligned with project architecture), security/privacy compliance, and deterministic tests/CI. "
-    "Enforce the repository rules provided. "
-    "Output only specific, actionable findings with concrete suggestions. "
-    "Do not include praise, generic statements, or scores. "
-    "If nothing actionable is found, respond with exactly: 'No actionable issues found.' "
-    "When appropriate, recommend the smallest viable fix with corresponding tests; "
-    "when design or architectural issues prevent correctness/completeness or violate repo rules, propose broader changes and outline a feasible plan (key changes, migration/tests)."
+    "Output format: Each issue must include concrete evidence and impact. "
+    "If no HIGH-FIDELITY issues exist, respond exactly: 'No actionable issues found.'"
 )
 
 prompt = f"""
-Review this pull request against the repository rules and the linked issue (if any).
+Review this pull request for HIGH-FIDELITY issues only. 
 
-Checks to perform (apply only if relevant to the changes):
-- Tests: new/updated tests present; deterministic (seeded, CPU, normalized vectors, stable sorting); no network access
-- CI: workflow updated if needed; all tests expected to pass in CI (not just locally)
-- Config: no hardcoded paths; settings read via shared.config.Config; update config.yaml.template and docs when adding config
-- Documentation: when adding features/dependencies/config, ensure README.md, CONTRIBUTING.md, and relevant docs/ files are updated; installation instructions should use pyproject.toml dependency groups (not requirements.txt)
-- Retrieval guidelines: cosine with normalized vectors; MMR with deterministic tie-break; hybrid lexical search only via separate plugin; structured debug logging behind config
-- Storage/data paths: configurable and default outside the repo
-- Security/privacy: no secrets committed; no data sent externally without a feature flag and documentation
-- Design: simple, maintainable; respects existing architecture (ingestion → storage → querying/plugins → CLI/API)
-- Completeness: fully addresses all requirements/acceptance criteria from the linked issue
+CRITICAL: Before flagging any issue, search the ENTIRE codebase context below for existing implementations.
+
+VALIDATION CHECKLIST (mark each as ✅ if already implemented or ❌ if missing):
+1. Tests: Are there actually missing test cases for NEW functionality? (Don't flag if similar tests exist)
+2. Documentation: Is there a genuine gap in docs that would confuse users? (Don't flag if adequately covered)
+3. CI: Will this actually break CI or cause non-deterministic failures?
+4. Security: Is there a real security vulnerability or credential exposure?
+5. Functionality: Does this actually break working features or prevent the PR from meeting its goals?
+6. Design: Does this violate project architecture or create maintainability issues?
+7. Completeness: Does this fully address all requirements/acceptance criteria from the linked issue?
+
+EVIDENCE REQUIRED: For each issue, provide:
+- File path and specific line/function
+- Concrete evidence the issue exists (quote relevant code)
+- Clear impact: "This will cause X problem when Y happens"
+- Verification it's not already handled elsewhere in the codebase
+
+PRIORITY FILTERS:
+- HIGH: Breaks functionality, security issues, missing critical tests for new features
+- SKIP: Cosmetic improvements, redundant tests when coverage exists, documentation that's already adequate
 
 --- PR Metadata ---
 Title: {pr.title}
@@ -199,7 +211,7 @@ Body: {pr.body or ''}
 --- PR Diff ---
 {diff}
 
-Provide only actionable findings as bullet points. For each, include: file path (and line/symbol if clear) and a concrete fix or test to add. If proposing broader changes, include a short plan with the minimum necessary steps. If none, reply: No actionable issues found.
+Only report HIGH-FIDELITY issues with concrete evidence and impact. If none exist, reply: "No actionable issues found."
 """
 
 review_resp = client.chat.completions.create(
@@ -208,18 +220,22 @@ review_resp = client.chat.completions.create(
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": prompt},
     ],
-    max_tokens=1200,
-    temperature=0.2,
+    max_tokens=800,  # Reduced to force conciseness and high-fidelity focus
+    temperature=0.1,  # Lower temperature for more consistent, focused reviews
 )
 review = review_resp.choices[0].message.content
 
 # Try to create a comment, but handle permission issues gracefully
-try:
-    pr.create_issue_comment(f"## Copilot LLM Review\n{review}")
-    print("✅ Review comment posted successfully")
-except Exception as e:
-    print(f"⚠️  Could not post comment (likely permissions): {e}")
-    print("📝 Review content:")
-    print("=" * 50)
-    print(review)
-    print("=" * 50)
+# Skip commenting if no actionable issues were found
+if review and "No actionable issues found" not in review.strip():
+    try:
+        pr.create_issue_comment(f"## Copilot LLM Review\n{review}")
+        print("✅ Review comment posted successfully")
+    except Exception as e:
+        print(f"⚠️  Could not post comment (likely permissions): {e}")
+        print("📝 Review content:")
+        print("=" * 50)
+        print(review)
+        print("=" * 50)
+else:
+    print("✅ No actionable issues found - skipping comment")
