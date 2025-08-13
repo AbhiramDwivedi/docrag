@@ -127,7 +127,7 @@ jobs:
         with: { python-version: '3.11' }
       - name: Install deps
         run: |
-          pip install -r requirements.txt
+          pip install -e backend[test]
           pip install pysqlite3-binary || true
       - name: Cache artifacts
         uses: actions/cache@v4

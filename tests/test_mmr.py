@@ -206,3 +206,79 @@ class TestMMRSelection:
         selected = mmr_selection(query, candidates, k=5)
         
         assert selected == [0]
+    
+    def test_mmr_all_identical_documents(self):
+        """Test MMR behavior with all identical candidate documents."""
+        query = np.array([1.0, 0.0, 0.0])
+        
+        # All candidates are identical
+        candidates = np.array([
+            [0.5, 0.5, 0.0],
+            [0.5, 0.5, 0.0],
+            [0.5, 0.5, 0.0],
+            [0.5, 0.5, 0.0],
+        ])
+        
+        selected = mmr_selection(query, candidates, mmr_lambda=0.5, k=3)
+        
+        # Should still select k documents even though they're identical
+        assert len(selected) == 3
+        # Should use deterministic tie-breaking (select indices in order)
+        assert selected == [0, 1, 2]
+    
+    def test_mmr_with_zero_similarity_documents(self):
+        """Test MMR with orthogonal (zero similarity) documents.""" 
+        query = np.array([1.0, 0.0, 0.0, 0.0])
+        
+        # All candidates are orthogonal to each other and query
+        candidates = np.array([
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0], 
+            [0.0, 0.0, 0.0, 1.0],
+        ])
+        
+        # With zero similarities, all should have same MMR score
+        selected = mmr_selection(query, candidates, mmr_lambda=0.5, k=3)
+        
+        # Should select all and use deterministic ordering
+        assert len(selected) == 3
+        assert selected == [0, 1, 2]
+    
+    def test_mmr_extreme_lambda_values(self):
+        """Test MMR with extreme lambda values (0.0 and 1.0)."""
+        query = np.array([1.0, 0.0])
+        
+        candidates = np.array([
+            [1.0, 0.0],    # Perfect match to query
+            [0.9, 0.1],    # Very similar to query and first doc  
+            [0.0, 1.0],    # Orthogonal to query
+        ])
+        
+        # Lambda = 1.0 (pure relevance) 
+        selected_pure_relevance = mmr_selection(query, candidates, mmr_lambda=1.0, k=3)
+        
+        # Lambda = 0.0 (pure diversity after first)
+        selected_pure_diversity = mmr_selection(query, candidates, mmr_lambda=0.0, k=3)
+        
+        # Both should be deterministic
+        assert len(selected_pure_relevance) == 3
+        assert len(selected_pure_diversity) == 3
+        
+        # Pure relevance should prioritize by similarity to query
+        assert selected_pure_relevance[0] == 0  # Most relevant first
+        
+    def test_mmr_large_k_value(self):
+        """Test MMR when k is larger than number of candidates."""
+        query = np.array([1.0, 0.0, 0.0])
+        
+        candidates = np.array([
+            [0.8, 0.2, 0.0],
+            [0.0, 0.8, 0.2],
+        ])
+        
+        # Request more documents than available
+        selected = mmr_selection(query, candidates, mmr_lambda=0.5, k=10)
+        
+        # Should return all available candidates
+        assert len(selected) == 2
+        assert set(selected) == {0, 1}

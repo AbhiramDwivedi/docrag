@@ -24,8 +24,8 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -e backend[dev]  # Install with dev dependencies including pytest
-        pip install pyyaml faiss-cpu pysqlite3-binary python-docx python-pptx reportlab openpyxl || true
+        pip install -e backend[test]  # Install with test dependencies including pytest and test tools
+        pip install pysqlite3-binary || true  # Linux-specific SQLite with FTS5
     
     - name: Cache artifacts
       uses: actions/cache@v4
@@ -87,9 +87,8 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r backend/requirements.txt
-        pip install reportlab openpyxl psutil
-        pip install pysqlite3-binary || true
+        pip install -e backend[test]  # Install with comprehensive test dependencies
+        pip install pysqlite3-binary || true  # Linux-specific SQLite with FTS5
     
     - name: Cache test artifacts
       uses: actions/cache@v4

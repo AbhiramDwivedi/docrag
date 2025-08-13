@@ -229,6 +229,26 @@ class TestPerformanceSmoke:
         # Memory increase should be reasonable for small corpus
         # Allow up to 100MB increase (very generous)
         assert memory_increase < 100_000_000, f"Memory usage too high: {memory_increase} bytes"
+        
+        # More detailed memory checks
+        # Index should take approximately: 17 chunks * 384 dimensions * 4 bytes = ~26KB
+        # But FAISS adds overhead, so allow up to 1MB for index
+        expected_index_memory = 1_000_000  # 1MB
+        
+        # Database operations should be lightweight - allow up to 10MB
+        expected_db_memory = 10_000_000  # 10MB
+        
+        # Total should be much less than our 100MB limit for this small corpus
+        assert memory_increase < expected_index_memory + expected_db_memory, \
+            f"Memory increase {memory_increase} bytes exceeds expected bounds"
+        
+        # Ensure no obvious memory leaks by checking resident vs virtual memory
+        memory_info = process.memory_info()
+        rss_mb = memory_info.rss / (1024 * 1024)  # Resident set size in MB
+        vms_mb = memory_info.vms / (1024 * 1024)  # Virtual memory size in MB
+        
+        # Virtual memory shouldn't be excessively larger than resident
+        assert vms_mb < rss_mb * 10, f"Virtual memory ({vms_mb:.1f}MB) much larger than RSS ({rss_mb:.1f}MB)"
     
     def test_concurrent_query_performance(self, test_artifacts_path, artifacts_exist):
         """Test performance with simulated concurrent queries."""

@@ -45,21 +45,20 @@ python -m backend.src.querying.api
 
 ## 📦 Installation Options
 
-### Option 1: Modern Installation (Recommended)
+### Modern Installation with Dependency Groups
 ```bash
-# Install in development mode using pyproject.toml
+# For development (includes testing and dev tools)
 cd backend
+pip install -e .[dev]
+
+# For testing (includes all test dependencies)
+pip install -e .[test]
+
+# For production (runtime dependencies only)
 pip install -e .
 ```
 
-### Option 2: Traditional Installation
-```bash
-# Install dependencies only using requirements.txt
-cd backend
-pip install -r requirements.txt
-```
-
-Both options install the same dependencies. The modern approach using `pyproject.toml` is recommended for development as it installs the package in editable mode.
+The modern approach using `pyproject.toml` with dependency groups is recommended as it provides proper dependency isolation and follows Python packaging standards.
 
 > **Note**: After cloning, you can run `python backend/setup_project.py` to automatically create config files and directories.
 
@@ -100,7 +99,7 @@ Both options install the same dependencies. The modern approach using `pyproject
 ├── examples/             # Example scripts and demos
 ├── watcher/              # File system monitoring
 └── backend/
-    └── requirements.txt  # Dependencies
+    └── pyproject.toml    # Modern Python packaging with dependency groups
 ```
 
 [📊 View detailed system architecture →](docs/ARCHITECTURE.md)

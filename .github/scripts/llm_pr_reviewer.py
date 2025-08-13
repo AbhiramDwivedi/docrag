@@ -97,6 +97,10 @@ ANCHORS = [
     "tests/",
     ".github/workflows/",
     "backend/shared/config.yaml.template",
+    "README.md",
+    "CONTRIBUTING.md",
+    "docs/",
+    "backend/pyproject.toml",
 ]
 
 # First pass: ask the LLM which anchors (max 3) it wants to inspect
@@ -118,6 +122,8 @@ Guidance:
 - For embeddings, consider embedder.py.
 - For CLI/entrypoints, consider cli/ask.py or interface/cli/ask.py.
 - For CI/test impact, consider tests/ and .github/workflows/.
+- For dependency changes, consider backend/pyproject.toml.
+- For documentation changes or new features, consider README.md, CONTRIBUTING.md, and docs/.
 
 Respond with a JSON object of the form: {{"anchors": ["path1", "path2"]}}. If none needed, return {{"anchors": []}}.
 """
@@ -169,6 +175,7 @@ Checks to perform (apply only if relevant to the changes):
 - Tests: new/updated tests present; deterministic (seeded, CPU, normalized vectors, stable sorting); no network access
 - CI: workflow updated if needed; all tests expected to pass in CI (not just locally)
 - Config: no hardcoded paths; settings read via shared.config.Config; update config.yaml.template and docs when adding config
+- Documentation: when adding features/dependencies/config, ensure README.md, CONTRIBUTING.md, and relevant docs/ files are updated; installation instructions should use pyproject.toml dependency groups (not requirements.txt)
 - Retrieval guidelines: cosine with normalized vectors; MMR with deterministic tie-break; hybrid lexical search only via separate plugin; structured debug logging behind config
 - Storage/data paths: configurable and default outside the repo
 - Security/privacy: no secrets committed; no data sent externally without a feature flag and documentation

@@ -73,6 +73,14 @@ def search_vector_index(
             })
     
     conn.close()
+    
+    # Sort results by score descending, then by chunk_id for deterministic tie-breaking
+    results.sort(key=lambda x: (-x['score'], x['chunk_id']))
+    
+    # Update rank after sorting
+    for i, result in enumerate(results):
+        result['rank'] = i
+    
     return results
 
 
@@ -106,6 +114,54 @@ def search_fts5_index(
         return []
     finally:
         conn.close()
+
+
+def merge_search_results(
+    vector_results: List[Dict[str, Any]], 
+    fts_results: List[Dict[str, Any]], 
+    alpha: float = 0.5
+) -> List[Dict[str, Any]]:
+    """Merge vector and FTS search results with hybrid scoring."""
+    # Create a map of chunk_id to combined results
+    combined = {}
+    
+    # Add vector results
+    for result in vector_results:
+        chunk_id = result['chunk_id']
+        combined[chunk_id] = {
+            **result,
+            'vector_score': result['score'],
+            'fts_score': 0.0,
+            'hybrid_score': alpha * result['score']
+        }
+    
+    # Add FTS results and update hybrid scores
+    for result in fts_results:
+        chunk_id = result['chunk_id']
+        if chunk_id in combined:
+            combined[chunk_id]['fts_score'] = result['score']
+            combined[chunk_id]['hybrid_score'] = (
+                alpha * combined[chunk_id]['vector_score'] + 
+                (1 - alpha) * result['score']
+            )
+        else:
+            combined[chunk_id] = {
+                **result,
+                'vector_score': 0.0,
+                'fts_score': result['score'],
+                'hybrid_score': (1 - alpha) * result['score']
+            }
+    
+    # Convert to list and sort by hybrid score descending, then chunk_id for determinism
+    results = list(combined.values())
+    results.sort(key=lambda x: (-x['hybrid_score'], x['chunk_id']))
+    
+    # Update rank and score to use hybrid score
+    for i, result in enumerate(results):
+        result['rank'] = i
+        result['score'] = result['hybrid_score']
+    
+    return results
 
 
 class TestGoldenRetrieval:
@@ -220,6 +276,15 @@ class TestGoldenRetrieval:
         # Results should be sorted by score (descending)
         scores = [result['score'] for result in results]
         assert scores == sorted(scores, reverse=True)
+        
+        # For deterministic tie-breaking, assert that identical scores are ordered consistently
+        # by a secondary key (e.g., chunk_id or file_path)
+        for i in range(len(results) - 1):
+            if abs(results[i]['score'] - results[i+1]['score']) < 1e-6:  # Tied scores
+                # When scores are tied, should be ordered by chunk_id for determinism
+                assert results[i]['chunk_id'] <= results[i+1]['chunk_id'], \
+                    f"Tied scores at positions {i}, {i+1} not deterministically ordered: " \
+                    f"{results[i]['chunk_id']} vs {results[i+1]['chunk_id']}"
     
     def test_golden_queries_vector_search(self, golden_queries, test_artifacts_path, artifacts_exist):
         """Test all golden queries using vector search."""

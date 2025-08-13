@@ -278,3 +278,82 @@ class TestHybridMerge:
         # All scores should be between 0 and 1 after normalization and weighting
         scores = [score for _, score in merged]
         assert all(0.0 <= score <= 1.0 for score in scores)
+        
+        # Test weight conservation: scores should scale with weights
+        merged_heavy_dense = merge_search_results(
+            dense_results, lexical_results,
+            dense_weight=0.9, lexical_weight=0.1  # Heavy dense weighting
+        )
+        
+        merged_heavy_lexical = merge_search_results(
+            dense_results, lexical_results,
+            dense_weight=0.1, lexical_weight=0.9  # Heavy lexical weighting
+        )
+        
+        # Both should still have scores in [0,1]
+        scores_heavy_dense = [score for _, score in merged_heavy_dense]
+        scores_heavy_lexical = [score for _, score in merged_heavy_lexical]
+        
+        assert all(0.0 <= score <= 1.0 for score in scores_heavy_dense)
+        assert all(0.0 <= score <= 1.0 for score in scores_heavy_lexical)
+    
+    def test_hybrid_score_composition_validation(self):
+        """Test that hybrid scores properly compose dense and lexical components."""
+        # Create overlapping results to test score combination
+        dense_results = [("doc1", 0.8), ("doc2", 0.6), ("doc3", 0.4)]
+        lexical_results = [("doc2", 10.0), ("doc3", 8.0), ("doc4", 6.0)]
+        
+        merged = merge_search_results(
+            dense_results, lexical_results,
+            dense_weight=0.7, lexical_weight=0.3,
+            normalize_method="min-max"
+        )
+        
+        # Find overlapping documents
+        merged_dict = dict(merged)
+        
+        # doc2 and doc3 appear in both - their scores should be combinations
+        assert "doc2" in merged_dict
+        assert "doc3" in merged_dict
+        
+        # Manually verify score composition
+        # Dense scores normalized: [0.8, 0.6, 0.4] -> [1.0, 0.5, 0.0]
+        # Lexical scores normalized: [10.0, 8.0, 6.0] -> [1.0, 0.5, 0.0]
+        
+        # doc2: 0.7 * 0.5 + 0.3 * 1.0 = 0.35 + 0.3 = 0.65
+        # doc3: 0.7 * 0.0 + 0.3 * 0.5 = 0.0 + 0.15 = 0.15
+        
+        expected_doc2_score = 0.7 * 0.5 + 0.3 * 1.0  # 0.65
+        expected_doc3_score = 0.7 * 0.0 + 0.3 * 0.5  # 0.15
+        
+        assert abs(merged_dict["doc2"] - expected_doc2_score) < 1e-10
+        assert abs(merged_dict["doc3"] - expected_doc3_score) < 1e-10
+        
+        # Results should be sorted by hybrid score descending
+        assert merged == sorted(merged, key=lambda x: -x[1])
+    
+    def test_hybrid_score_edge_cases(self):
+        """Test hybrid scoring with edge cases."""
+        # Test with identical scores
+        dense_results = [("doc1", 0.5), ("doc2", 0.5), ("doc3", 0.5)]
+        lexical_results = [("doc4", 10.0), ("doc5", 10.0)]
+        
+        merged = merge_search_results(dense_results, lexical_results)
+        
+        # Should handle identical scores gracefully
+        assert len(merged) == 5
+        scores = [score for _, score in merged]
+        assert all(0.0 <= score <= 1.0 for score in scores)
+        
+        # Test with single result in each
+        single_dense = [("doc1", 0.8)]
+        single_lexical = [("doc2", 12.0)]
+        
+        merged_single = merge_search_results(single_dense, single_lexical)
+        
+        # Both should get full normalized scores
+        merged_single_dict = dict(merged_single)
+        # Since each is alone in their list, they get score 1.0 after normalization
+        # doc1: 0.6 * 1.0 = 0.6, doc2: 0.4 * 1.0 = 0.4  
+        assert abs(merged_single_dict["doc1"] - 0.6) < 1e-10
+        assert abs(merged_single_dict["doc2"] - 0.4) < 1e-10

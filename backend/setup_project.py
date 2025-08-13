@@ -47,7 +47,7 @@ def setup_project():
     print("\n📋 Next Steps:")
     print("1. Install dependencies:")
     print("   Modern: pip install -e .  (from backend/ directory)")
-    print("   Legacy: pip install -r requirements.txt")
+    print("   Modern: pip install -e .[dev]")
     print("2. Edit config/config.yaml with your settings")
     print("3. Index documents: python -m backend.src.ingestion.pipeline --mode full")
     print("4. Ask questions: python -m backend.src.interface.cli.ask \"What files are available?\"")
