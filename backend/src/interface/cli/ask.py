@@ -56,7 +56,7 @@ def get_agent():
         except ImportError as e:
             # Handle missing dependencies gracefully
             print(f"Warning: Could not load agent dependencies: {e}")
-            print("Please install the required dependencies with: pip install -r requirements.txt")
+            print("Please install the required dependencies with: pip install -e .[dev]")
             return None
     return _agent
 

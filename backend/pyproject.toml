@@ -58,6 +58,16 @@ dev = [
     "pytest-cov",
     "pytest-mock",
 ]
+test = [
+    "pytest",
+    "pytest-cov", 
+    "pytest-mock",
+    "numpy",
+    "faiss-cpu",  # Already in main deps but explicit for tests
+    "psutil",     # For memory monitoring in performance tests
+    "openpyxl",   # For generating Excel test files
+    "reportlab",  # For generating PDF test files
+]
 
 [project.urls]
 Homepage = "https://github.com/AbhiramDwivedi/docrag"

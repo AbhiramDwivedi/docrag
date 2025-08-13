@@ -15,7 +15,7 @@ Thanks for your interest in contributing! This guide will help you get started.
    python -m venv .venv
    source .venv/bin/activate  # or .venv\Scripts\activate on Windows
    cd backend
-   pip install -r requirements.txt
+   pip install -e .[dev]  # Install with development dependencies
    cd ..
    python setup.py  # Post-clone setup
    ```

@@ -49,10 +49,29 @@ def test_pyproject_toml_content():
         assert any(dep in d for d in dependencies), f"Expected dependency {dep} not found"
 
 
-def test_requirements_txt_still_exists():
-    """Test that requirements.txt still exists for backwards compatibility."""
+def test_pyproject_toml_replaces_requirements():
+    """Test that pyproject.toml is now the primary dependency specification."""
+    pyproject_path = Path(__file__).parent.parent / "pyproject.toml"
     requirements_path = Path(__file__).parent.parent / "requirements.txt"
-    assert requirements_path.exists(), "requirements.txt should still exist"
+    
+    # pyproject.toml should exist
+    assert pyproject_path.exists(), "pyproject.toml should exist as primary dependency spec"
+    
+    # requirements.txt should NOT exist (migrated away)
+    assert not requirements_path.exists(), "requirements.txt should be removed in favor of pyproject.toml"
+    
+    # Verify pyproject.toml has dependency groups
+    with open(pyproject_path, "rb") as f:
+        data = tomllib.load(f)
+    
+    assert "project" in data
+    assert "dependencies" in data["project"], "Should have main dependencies"
+    assert "optional-dependencies" in data["project"], "Should have optional dependency groups"
+    
+    # Check for our expected dependency groups
+    optional_deps = data["project"]["optional-dependencies"]
+    assert "dev" in optional_deps, "Should have [dev] dependency group"
+    assert "test" in optional_deps, "Should have [test] dependency group"
 
 
 def test_setup_script_renamed():
@@ -95,7 +114,7 @@ if __name__ == "__main__":
     # Run basic tests
     test_pyproject_toml_exists()
     test_pyproject_toml_content()
-    test_requirements_txt_still_exists()
+    test_pyproject_toml_replaces_requirements()
     test_setup_script_renamed()
     test_pytest_configuration()
     test_package_can_be_imported()

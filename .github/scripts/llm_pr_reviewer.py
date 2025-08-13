@@ -1,13 +1,24 @@
 import os
-import openai
+from openai import OpenAI
 from github import Github
 import re
 import base64
+import requests
 
 REPO = os.environ.get("GITHUB_REPOSITORY")
 PR_NUMBER = os.environ.get("PR_NUMBER")
 GITHUB_TOKEN = os.environ["GITHUB_TOKEN"]
 OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
+
+# Validate required environment variables
+if not REPO:
+    raise ValueError("GITHUB_REPOSITORY environment variable is not set")
+if not PR_NUMBER:
+    raise ValueError("PR_NUMBER environment variable is not set")
+if not GITHUB_TOKEN:
+    raise ValueError("GITHUB_TOKEN environment variable is not set")
+if not OPENAI_API_KEY:
+    raise ValueError("OPENAI_API_KEY environment variable is not set")
 
 # Load Copilot instructions
 with open(".github/copilot-instructions.md", "r", encoding="utf-8") as f:
@@ -16,7 +27,15 @@ with open(".github/copilot-instructions.md", "r", encoding="utf-8") as f:
 g = Github(GITHUB_TOKEN)
 repo = g.get_repo(REPO)
 pr = repo.get_pull(int(PR_NUMBER))
-diff = pr.diff()
+
+# Get the diff using the raw GitHub API
+diff_url = f"https://api.github.com/repos/{REPO}/pulls/{PR_NUMBER}"
+headers = {
+    "Authorization": f"token {GITHUB_TOKEN}",
+    "Accept": "application/vnd.github.v3.diff"
+}
+diff_response = requests.get(diff_url, headers=headers)
+diff = diff_response.text if diff_response.status_code == 200 else ""
 
 # Try to find a linked issue (by convention: fixes #123 or closes #123 in PR body)
 issue_number = None
@@ -78,6 +97,10 @@ ANCHORS = [
     "tests/",
     ".github/workflows/",
     "backend/shared/config.yaml.template",
+    "README.md",
+    "CONTRIBUTING.md",
+    "docs/",
+    "backend/pyproject.toml",
 ]
 
 # First pass: ask the LLM which anchors (max 3) it wants to inspect
@@ -99,13 +122,17 @@ Guidance:
 - For embeddings, consider embedder.py.
 - For CLI/entrypoints, consider cli/ask.py or interface/cli/ask.py.
 - For CI/test impact, consider tests/ and .github/workflows/.
+- For dependency changes, consider backend/pyproject.toml.
+- For documentation changes or new features, consider README.md, CONTRIBUTING.md, and docs/.
 
 Respond with a JSON object of the form: {{"anchors": ["path1", "path2"]}}. If none needed, return {{"anchors": []}}.
 """
 
-openai.api_key = OPENAI_API_KEY
-sel = openai.ChatCompletion.create(
-    model="gpt-5-nano",
+# Initialize OpenAI client
+client = OpenAI(api_key=OPENAI_API_KEY)
+
+sel = client.chat.completions.create(
+    model="gpt-4o-mini",
     messages=[
         {"role": "system", "content": "You are a pragmatic code reviewer that selects minimal extra context to inspect."},
         {"role": "user", "content": selection_prompt},
@@ -113,11 +140,12 @@ sel = openai.ChatCompletion.create(
     max_tokens=200,
     temperature=0.0,
 )
-sel_text = sel["choices"][0]["message"]["content"]
+sel_text = sel.choices[0].message.content
 requested = []
 try:
     import json
-    requested = json.loads(sel_text).get("anchors", [])[:3]
+    if sel_text:
+        requested = json.loads(sel_text).get("anchors", [])[:3]
 except Exception:
     requested = []
 
@@ -129,29 +157,42 @@ for path in requested:
 anchors_context = "\n".join(anchor_sections)
 
 SYSTEM_PROMPT = (
-    "You are an expert code reviewer for this repository. "
+    "You are an expert code reviewer focusing on HIGH-FIDELITY issues only. "
+    "Before flagging an issue, carefully examine the ENTIRE context including existing tests, documentation, and implementations. "
+    "Only report issues that would cause actual problems: broken functionality, missing critical tests, security vulnerabilities, "
+    "clear violations of stated requirements, poor design decisions, or incomplete implementation of requirements. "
+    "Do NOT report issues if: (1) functionality already exists elsewhere in the codebase, "
+    "(2) documentation already covers the topic adequately, (3) tests already provide sufficient coverage, "
+    "or (4) the suggestion is purely cosmetic or incremental without clear impact. "
     "Your review must ensure: correctness, completeness (meets linked issue requirements), "
     "sound design (maintainable, aligned with project architecture), security/privacy compliance, and deterministic tests/CI. "
-    "Enforce the repository rules provided. "
-    "Output only specific, actionable findings with concrete suggestions. "
-    "Do not include praise, generic statements, or scores. "
-    "If nothing actionable is found, respond with exactly: 'No actionable issues found.' "
-    "When appropriate, recommend the smallest viable fix with corresponding tests; "
-    "when design or architectural issues prevent correctness/completeness or violate repo rules, propose broader changes and outline a feasible plan (key changes, migration/tests)."
+    "Output format: Each issue must include concrete evidence and impact. "
+    "If no HIGH-FIDELITY issues exist, respond exactly: 'No actionable issues found.'"
 )
 
 prompt = f"""
-Review this pull request against the repository rules and the linked issue (if any).
+Review this pull request for HIGH-FIDELITY issues only. 
 
-Checks to perform (apply only if relevant to the changes):
-- Tests: new/updated tests present; deterministic (seeded, CPU, normalized vectors, stable sorting); no network access
-- CI: workflow updated if needed; all tests expected to pass in CI (not just locally)
-- Config: no hardcoded paths; settings read via shared.config.Config; update config.yaml.template and docs when adding config
-- Retrieval guidelines: cosine with normalized vectors; MMR with deterministic tie-break; hybrid lexical search only via separate plugin; structured debug logging behind config
-- Storage/data paths: configurable and default outside the repo
-- Security/privacy: no secrets committed; no data sent externally without a feature flag and documentation
-- Design: simple, maintainable; respects existing architecture (ingestion → storage → querying/plugins → CLI/API)
-- Completeness: fully addresses all requirements/acceptance criteria from the linked issue
+CRITICAL: Before flagging any issue, search the ENTIRE codebase context below for existing implementations.
+
+VALIDATION CHECKLIST (mark each as ✅ if already implemented or ❌ if missing):
+1. Tests: Are there actually missing test cases for NEW functionality? (Don't flag if similar tests exist)
+2. Documentation: Is there a genuine gap in docs that would confuse users? (Don't flag if adequately covered)
+3. CI: Will this actually break CI or cause non-deterministic failures?
+4. Security: Is there a real security vulnerability or credential exposure?
+5. Functionality: Does this actually break working features or prevent the PR from meeting its goals?
+6. Design: Does this violate project architecture or create maintainability issues?
+7. Completeness: Does this fully address all requirements/acceptance criteria from the linked issue?
+
+EVIDENCE REQUIRED: For each issue, provide:
+- File path and specific line/function
+- Concrete evidence the issue exists (quote relevant code)
+- Clear impact: "This will cause X problem when Y happens"
+- Verification it's not already handled elsewhere in the codebase
+
+PRIORITY FILTERS:
+- HIGH: Breaks functionality, security issues, missing critical tests for new features
+- SKIP: Cosmetic improvements, redundant tests when coverage exists, documentation that's already adequate
 
 --- PR Metadata ---
 Title: {pr.title}
@@ -170,18 +211,31 @@ Body: {pr.body or ''}
 --- PR Diff ---
 {diff}
 
-Provide only actionable findings as bullet points. For each, include: file path (and line/symbol if clear) and a concrete fix or test to add. If proposing broader changes, include a short plan with the minimum necessary steps. If none, reply: No actionable issues found.
+Only report HIGH-FIDELITY issues with concrete evidence and impact. If none exist, reply: "No actionable issues found."
 """
 
-review_resp = openai.ChatCompletion.create(
-    model="gpt-5-mini",
+review_resp = client.chat.completions.create(
+    model="gpt-4o-mini",
     messages=[
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": prompt},
     ],
-    max_tokens=1200,
-    temperature=0.2,
+    max_tokens=800,  # Reduced to force conciseness and high-fidelity focus
+    temperature=0.1,  # Lower temperature for more consistent, focused reviews
 )
-review = review_resp["choices"][0]["message"]["content"]
+review = review_resp.choices[0].message.content
 
-pr.create_issue_comment(f"## Copilot LLM Review\n{review}")
+# Try to create a comment, but handle permission issues gracefully
+# Skip commenting if no actionable issues were found
+if review and "No actionable issues found" not in review.strip():
+    try:
+        pr.create_issue_comment(f"## Copilot LLM Review\n{review}")
+        print("✅ Review comment posted successfully")
+    except Exception as e:
+        print(f"⚠️  Could not post comment (likely permissions): {e}")
+        print("📝 Review content:")
+        print("=" * 50)
+        print(review)
+        print("=" * 50)
+else:
+    print("✅ No actionable issues found - skipping comment")

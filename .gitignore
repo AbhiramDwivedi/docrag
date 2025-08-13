@@ -21,6 +21,13 @@ data/
 *.db
 *.index
 
+# Test artifacts and generated files
+tests/fixtures/artifacts_v1/
+tests/fixtures/corpus_v1/office/*.docx
+tests/fixtures/corpus_v1/office/*.pptx
+tests/fixtures/corpus_v1/office/*.pdf
+tests/fixtures/corpus_v1/office/*.xlsx
+
 # IDE and editor files
 .vscode/
 .idea/
