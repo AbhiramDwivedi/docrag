@@ -17,6 +17,13 @@ class Settings(BaseModel):
     embed_model: str = "sentence-transformers/all-MiniLM-L6-v2"
     batch_size: int = 32
     openai_api_key: Optional[str] = None
+    
+    # Phase 1: Retrieval robustness parameters
+    retrieval_k: int = Field(default=100, description="Number of initial chunks to retrieve before MMR")
+    mmr_lambda: float = Field(default=0.7, ge=0.0, le=1.0, description="MMR balance: 1.0=pure relevance, 0.0=pure diversity")
+    mmr_k: int = Field(default=20, description="Final number of chunks to return after MMR selection")
+    proper_noun_boost: float = Field(default=0.3, ge=0.0, le=1.0, description="Boost factor for metadata matches on proper noun queries")
+    enable_debug_logging: bool = Field(default=False, description="Enable detailed debug logging for retrieval pipeline")
 
     @field_validator('sync_root', mode='before')
     @classmethod
