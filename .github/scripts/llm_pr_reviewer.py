@@ -1,5 +1,5 @@
 import os
-import openai
+from openai import OpenAI
 from github import Github
 import re
 import base64
@@ -122,9 +122,11 @@ Guidance:
 Respond with a JSON object of the form: {{"anchors": ["path1", "path2"]}}. If none needed, return {{"anchors": []}}.
 """
 
-openai.api_key = OPENAI_API_KEY
-sel = openai.ChatCompletion.create(
-    model="gpt-5-nano",
+# Initialize OpenAI client
+client = OpenAI(api_key=OPENAI_API_KEY)
+
+sel = client.chat.completions.create(
+    model="gpt-4o-mini",
     messages=[
         {"role": "system", "content": "You are a pragmatic code reviewer that selects minimal extra context to inspect."},
         {"role": "user", "content": selection_prompt},
@@ -132,11 +134,12 @@ sel = openai.ChatCompletion.create(
     max_tokens=200,
     temperature=0.0,
 )
-sel_text = sel["choices"][0]["message"]["content"]
+sel_text = sel.choices[0].message.content
 requested = []
 try:
     import json
-    requested = json.loads(sel_text).get("anchors", [])[:3]
+    if sel_text:
+        requested = json.loads(sel_text).get("anchors", [])[:3]
 except Exception:
     requested = []
 
@@ -192,8 +195,8 @@ Body: {pr.body or ''}
 Provide only actionable findings as bullet points. For each, include: file path (and line/symbol if clear) and a concrete fix or test to add. If proposing broader changes, include a short plan with the minimum necessary steps. If none, reply: No actionable issues found.
 """
 
-review_resp = openai.ChatCompletion.create(
-    model="gpt-5-mini",
+review_resp = client.chat.completions.create(
+    model="gpt-4o-mini",
     messages=[
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": prompt},
@@ -201,6 +204,6 @@ review_resp = openai.ChatCompletion.create(
     max_tokens=1200,
     temperature=0.2,
 )
-review = review_resp["choices"][0]["message"]["content"]
+review = review_resp.choices[0].message.content
 
 pr.create_issue_comment(f"## Copilot LLM Review\n{review}")
