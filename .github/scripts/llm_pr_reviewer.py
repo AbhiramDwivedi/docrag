@@ -10,6 +10,16 @@ PR_NUMBER = os.environ.get("PR_NUMBER")
 GITHUB_TOKEN = os.environ["GITHUB_TOKEN"]
 OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
 
+# Validate required environment variables
+if not REPO:
+    raise ValueError("GITHUB_REPOSITORY environment variable is not set")
+if not PR_NUMBER:
+    raise ValueError("PR_NUMBER environment variable is not set")
+if not GITHUB_TOKEN:
+    raise ValueError("GITHUB_TOKEN environment variable is not set")
+if not OPENAI_API_KEY:
+    raise ValueError("OPENAI_API_KEY environment variable is not set")
+
 # Load Copilot instructions
 with open(".github/copilot-instructions.md", "r", encoding="utf-8") as f:
     instructions = f.read()
