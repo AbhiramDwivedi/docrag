@@ -2,6 +2,12 @@ name: Copilot LLM Reviewer
 on:
   pull_request:
     types: [opened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
 jobs:
   review:
     runs-on: ubuntu-latest

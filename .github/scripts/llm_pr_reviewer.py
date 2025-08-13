@@ -206,4 +206,13 @@ review_resp = client.chat.completions.create(
 )
 review = review_resp.choices[0].message.content
 
-pr.create_issue_comment(f"## Copilot LLM Review\n{review}")
+# Try to create a comment, but handle permission issues gracefully
+try:
+    pr.create_issue_comment(f"## Copilot LLM Review\n{review}")
+    print("✅ Review comment posted successfully")
+except Exception as e:
+    print(f"⚠️  Could not post comment (likely permissions): {e}")
+    print("📝 Review content:")
+    print("=" * 50)
+    print(review)
+    print("=" * 50)
