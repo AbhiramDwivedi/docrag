@@ -8,3 +8,6 @@
 {"id":"q08","type":"protocol","query":"BOLT v2.1 features","expects":{"doc_ids":["text/bolt_spec.md"],"k":20,"min_at_topk":1}}
 {"id":"q09","type":"financial","query":"investment bank technology","expects":{"doc_ids":["text/globex_financial.md"],"k":20,"min_at_topk":1}}
 {"id":"q10","type":"workflow","query":"enterprise workflow automation","expects":{"doc_ids":["text/initech_roadmap.txt"],"k":20,"min_at_topk":1}}
+{"id":"q11","type":"case_variation","query":"acme corporation","expects":{"doc_ids":["text/acme_overview.txt"],"k":20,"min_at_topk":1}}
+{"id":"q12","type":"misspelling","query":"globx financial","expects":{"doc_ids":["text/globex_financial.md"],"k":20,"min_at_topk":0.5}}
+{"id":"q13","type":"partial","query":"contoso co","expects":{"doc_ids":["text/contoso_partnership.txt"],"k":20,"min_at_topk":1}}

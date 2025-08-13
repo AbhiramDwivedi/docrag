@@ -21,7 +21,7 @@ python -m venv .venv
 
 # 2. Install dependencies
 cd backend
-pip install -e .
+pip install -e .[dev]  # Install with development dependencies
 cd ..
 
 # 3. Create your config file

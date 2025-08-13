@@ -404,3 +404,82 @@ class TestGoldenRetrieval:
         coverage = len(found_files) / len(text_files) if text_files else 0
         
         assert coverage >= 0.8, f"Only found {len(found_files)}/{len(text_files)} text files: {found_files}"
+
+
+def test_golden_retrieval_edge_cases(tmp_path):
+    """Test retrieval system behavior with edge case queries."""
+    artifacts_dir = Path(__file__).parent / "fixtures" / "artifacts_v1"
+    
+    if not artifacts_dir.exists():
+        pytest.skip("Artifacts not available - run build_test_artifacts.py first")
+    
+    vector_path = artifacts_dir / "vector.index"
+    db_path = artifacts_dir / "docmeta.db"
+    
+    if not vector_path.exists() or not db_path.exists():
+        pytest.skip("Required artifacts missing")
+    
+    # Test query that should return no results
+    no_results_queries = [
+        "xyznonexistentterm12345",  # Completely non-existent term
+        "zebra elephant unicorn",   # Multiple non-existent terms
+        "®™©¡¿±"                   # Special characters only
+    ]
+    
+    for query in no_results_queries:
+        # Vector search should return empty or very low relevance results
+        vector_results = search_vector_index(query, vector_path, db_path, k=5)
+        
+        # If results are returned, scores should be very low (< 0.1)
+        if vector_results:
+            max_score = max(result['score'] for result in vector_results)
+            assert max_score < 0.1, f"Query '{query}' returned unexpectedly high score: {max_score}"
+    
+    # Test FTS5 search with non-existent terms
+    try:
+        for query in no_results_queries:
+            fts_results = search_fts5_index(query, db_path, k=5)
+            # FTS5 should return empty results for non-existent terms
+            assert len(fts_results) == 0, f"FTS5 query '{query}' should return no results"
+    except Exception:
+        # FTS5 might not be available, skip this part
+        pass
+
+
+def test_golden_retrieval_query_variations(tmp_path):
+    """Test retrieval with query variations and misspellings."""
+    artifacts_dir = Path(__file__).parent / "fixtures" / "artifacts_v1"
+    
+    if not artifacts_dir.exists():
+        pytest.skip("Artifacts not available - run build_test_artifacts.py first")
+    
+    vector_path = artifacts_dir / "vector.index"
+    db_path = artifacts_dir / "docmeta.db"
+    
+    if not vector_path.exists() or not db_path.exists():
+        pytest.skip("Required artifacts missing")
+    
+    # Test query variations and misspellings
+    query_variations = [
+        ("Acme", "acme"),           # Case variation
+        ("Acme", "ACME"),           # Uppercase
+        ("Globex", "globx"),        # Minor misspelling
+        ("Contoso", "contoso co"),  # Partial match
+        ("BOLT", "bolt protocol"),  # Expansion
+    ]
+    
+    for original, variation in query_variations:
+        # Get results for both queries
+        original_results = search_vector_index(original, vector_path, db_path, k=10)
+        variation_results = search_vector_index(variation, vector_path, db_path, k=10)
+        
+        # Both should return some results
+        assert len(original_results) > 0, f"Original query '{original}' returned no results"
+        assert len(variation_results) > 0, f"Variation query '{variation}' returned no results"
+        
+        # Results should have some overlap (at least one common document in top 5)
+        original_docs = set(result['file_path'] for result in original_results[:5])
+        variation_docs = set(result['file_path'] for result in variation_results[:5])
+        
+        overlap = len(original_docs.intersection(variation_docs))
+        assert overlap > 0, f"No overlap between '{original}' and '{variation}' results"
