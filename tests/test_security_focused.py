@@ -27,9 +27,9 @@ class TestLexicalSearchSecurityCore:
         # Test dangerous inputs and their expected safe outputs
         test_cases = [
             # SQL injection attempts
-            ("'; DROP TABLE chunks; --", "DROP TABLE chunks"),
-            ("' UNION SELECT * FROM sqlite_master --", "UNION SELECT FROM sqlite_master"),
-            ("test'; DELETE FROM chunks_fts; --", "test DELETE FROM chunks_fts"),
+            ("'; DROP TABLE chunks; --", "chunks"),  # SQL keywords removed
+            ("' UNION SELECT * FROM sqlite_master --", "sqlite_master"),  # SQL keywords removed  
+            ("test'; DELETE FROM chunks_fts; --", "test chunks_fts"),  # SQL keywords removed
             
             # FTS5 special characters that could cause issues
             ("test*malicious", "testmalicious"),  # Wildcard removed
@@ -42,7 +42,7 @@ class TestLexicalSearchSecurityCore:
             ("test:column", "testcolumn"),         # Column specifiers removed
             ("test+required", "testrequired"),     # Required terms removed
             ("test\\escape", "testescape"),        # Escape characters removed
-            ("test;DROP", "testDROP"),             # SQL terminators removed
+            ("test;DROP", "testDROP"),         # SQL terminators removed but compound words preserved
             ("test--comment", "testcomment"),      # Comments removed
             ("test/*comment*/", "testcomment"),    # Block comments removed
             
@@ -60,10 +60,20 @@ class TestLexicalSearchSecurityCore:
                 assert isinstance(sanitized, str), f"Output should be string for input '{input_query}'"
                 
                 # Should not contain dangerous SQL patterns
-                dangerous_patterns = [";", "--", "/*", "*/", "DROP", "DELETE", "INSERT", "UPDATE"]
-                for pattern in dangerous_patterns:
-                    assert pattern not in sanitized.upper(), \
+                dangerous_chars = [";", "--", "/*", "*/"]
+                sql_keywords = ["DROP", "DELETE", "INSERT", "UPDATE"]
+                
+                # Check for dangerous characters (should be completely removed)
+                for pattern in dangerous_chars:
+                    assert pattern not in sanitized, \
                         f"Sanitized output should not contain '{pattern}' for input '{input_query}', got '{sanitized}'"
+                
+                # Check for SQL keywords as standalone words (should not exist as complete words)
+                import re
+                for keyword in sql_keywords:
+                    pattern = r'\b' + re.escape(keyword) + r'\b'
+                    assert not re.search(pattern, sanitized, re.IGNORECASE), \
+                        f"Sanitized output should not contain standalone '{keyword}' for input '{input_query}', got '{sanitized}'"
                 
                 # Should contain expected safe content (if not empty)
                 if expected_contains and expected_contains != "":

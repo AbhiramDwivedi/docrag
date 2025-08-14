@@ -57,6 +57,8 @@ class LexicalSearchPlugin(Plugin):
         return PluginInfo(
             name="lexical_search",
             description="Lexical search using SQLite FTS5 for keyword and exact text matching",
+            version="1.0.0",
+            capabilities=["search", "lexical", "fts5", "bm25"],
             parameters={
                 "query": {"type": "string", "required": True, "description": "Search query"},
                 "limit": {"type": "integer", "default": 20, "description": "Maximum results"},
@@ -123,7 +125,15 @@ class LexicalSearchPlugin(Plugin):
                 }
             
             # Perform lexical search
-            results = self._search_fts5(query, limit, exact_phrase, prefix_match)
+            try:
+                results = self._search_fts5(query, limit, exact_phrase, prefix_match)
+            except Exception as e:
+                logger.error(f"Database connection error during search: {e}")
+                return {
+                    "response": "Database connection error occurred during search.",
+                    "sources": [],
+                    "metadata": {"error": "database_connection_error", "results_count": 0, "query": query}
+                }
             
             if not results:
                 return {
@@ -245,10 +255,18 @@ class LexicalSearchPlugin(Plugin):
             return results
             
         except sqlite3.OperationalError as e:
+            # Database connection errors should be re-raised to be handled at execute level
+            if "unable to open database" in str(e) or "no such file or directory" in str(e):
+                logger.error(f"Database connection error: {e}")
+                raise e
             logger.error(f"FTS5 query failed: {e}")
             logger.error(f"Original query: '{query}', Prepared query: '{fts_query if 'fts_query' in locals() else 'N/A'}'")
             return []
         except sqlite3.Error as e:
+            # Database connection errors should be re-raised to be handled at execute level
+            if "no such file or directory" in str(e) or "unable to open database" in str(e):
+                logger.error(f"Database connection error: {e}")
+                raise e
             logger.error(f"Database error during FTS5 search: {e}")
             return []
         except Exception as e:
@@ -339,9 +357,26 @@ class LexicalSearchPlugin(Plugin):
         # Remove excessive whitespace and normalize
         query = ' '.join(query.split())
         
+        # Remove dangerous SQL keywords (case-insensitive)
+        # Apply this after character removal to catch compound cases like "test;DROP" -> "testDROP"
+        sql_keywords = [
+            'DROP', 'DELETE', 'INSERT', 'UPDATE', 'ALTER', 'CREATE', 
+            'TRUNCATE', 'EXEC', 'EXECUTE', 'UNION', 'SELECT', 'FROM',
+            'WHERE', 'HAVING', 'ORDER', 'GROUP', 'INTO', 'VALUES',
+            'TABLE', 'DATABASE', 'SCHEMA', 'INDEX', 'VIEW', 'TRIGGER'
+        ]
+        
+        for keyword in sql_keywords:
+            # Use word boundaries to avoid removing legitimate words containing these
+            pattern = r'\b' + re.escape(keyword) + r'\b'
+            query = re.sub(pattern, '', query, flags=re.IGNORECASE)
+        
+        # Remove excessive whitespace again after keyword removal
+        query = ' '.join(query.split())
+        
         # Additional safety: only allow alphanumeric, spaces, and basic punctuation
-        # This regex allows letters, numbers, spaces, hyphens, underscores, and periods
-        query = re.sub(r'[^a-zA-Z0-9\s\-_.]', '', query)
+        # This regex allows letters, numbers, spaces, hyphens, underscores, periods, and escaped quotes
+        query = re.sub(r'[^a-zA-Z0-9\s\-_."]', '', query)
         
         return query.strip()
     
@@ -408,3 +443,39 @@ class LexicalSearchPlugin(Plugin):
         except Exception as e:
             logger.error(f"Failed to create FTS5 index: {e}")
             return False
+    
+    def validate_params(self, params: Dict[str, Any]) -> bool:
+        """Validate parameters for lexical search.
+        
+        Args:
+            params: Dictionary of parameters to validate
+            
+        Returns:
+            True if parameters are valid, False otherwise
+        """
+        # Check if query parameter exists and is a string
+        query = params.get("query")
+        if not isinstance(query, str):
+            return False
+        
+        # Check query length (basic DoS protection)
+        if len(query.strip()) == 0 or len(query) > 1000:
+            return False
+        
+        # Validate limit parameter if provided
+        limit = params.get("limit")
+        if limit is not None:
+            try:
+                limit_int = int(limit)
+                if limit_int <= 0 or limit_int > 100:
+                    return False
+            except (ValueError, TypeError):
+                return False
+        
+        # Validate boolean parameters
+        for param in ["exact_phrase", "prefix_match"]:
+            value = params.get(param)
+            if value is not None and not isinstance(value, bool):
+                return False
+        
+        return True

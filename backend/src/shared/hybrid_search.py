@@ -129,15 +129,22 @@ def classify_query_intent(query: str) -> Dict[str, Any]:
     
     query_lower = query.lower().strip()
     
-    # Detect proper nouns (capitalized words)
+    # Detect proper nouns (capitalized words) but exclude common question/sentence starters
+    question_words = {'what', 'who', 'where', 'when', 'why', 'how', 'which', 'the', 'a', 'an'}
     proper_nouns = re.findall(r'\b[A-Z][A-Z0-9]*\b', query)  # All caps words
-    proper_nouns += re.findall(r'\b[A-Z][a-z]+\b', query)    # Title case words
+    title_case_words = re.findall(r'\b[A-Z][a-z]+\b', query)  # Title case words
+    
+    # Filter out question words and common sentence starters
+    proper_nouns += [word for word in title_case_words if word.lower() not in question_words]
     
     # Detect common keywords that suggest lexical search
-    lexical_keywords = [
+    lexical_phrases = [
         'containing', 'includes', 'mentions', 'keyword', 'exact', 'phrase',
         'find files', 'search for', 'documents with', 'files containing'
     ]
+    
+    # Individual words that suggest lexical search
+    lexical_words = ['find', 'locate', 'search', 'contains']
     
     # Detect semantic indicators
     semantic_keywords = [
@@ -146,7 +153,13 @@ def classify_query_intent(query: str) -> Dict[str, Any]:
     ]
     
     # Count indicators
-    lexical_score = sum(1 for kw in lexical_keywords if kw in query_lower)
+    lexical_score = sum(1 for kw in lexical_phrases if kw in query_lower)
+    lexical_score += sum(1 for word in lexical_words if word in query_lower.split())
+    
+    # Extra weight for "find" at the beginning of query
+    if query_lower.startswith('find '):
+        lexical_score += 1
+    
     semantic_score = sum(1 for kw in semantic_keywords if kw in query_lower)
     
     # Query length analysis
