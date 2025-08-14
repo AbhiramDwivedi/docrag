@@ -215,7 +215,7 @@ Only report HIGH-FIDELITY issues with concrete evidence and impact. If none exis
 """
 
 review_resp = client.chat.completions.create(
-    model="gpt-4o-mini",
+    model="o3-mini",
     messages=[
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": prompt},
