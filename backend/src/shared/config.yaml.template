@@ -5,7 +5,14 @@ knowledge_graph_path: "data/knowledge_graph.db"
 chunk_size: 800
 overlap: 150
 embed_model: "sentence-transformers/all-MiniLM-L6-v2"
+embed_model_version: "1.0.0"
 batch_size: 32
+
+# Phase 3: Advanced embedding models (choose one)
+# embed_model: "intfloat/e5-base-v2"           # E5 model with query/passage prefixes (best quality)
+# embed_model: "BAAI/bge-small-en-v1.5"       # BGE model (good balance of speed/quality)  
+# embed_model: "thenlper/gte-base"             # GTE model (good general purpose)
+# embed_model_version: "2.0.0"                # Update version when changing models
 # Set your OpenAI API key here (safer than environment variables)
 # Get your key from: https://platform.openai.com/api-keys
 # Run 'python setup_openai.py' for secure setup

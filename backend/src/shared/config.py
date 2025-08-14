@@ -15,6 +15,7 @@ class Settings(BaseModel):
     chunk_size: int = 800
     overlap: int = 150
     embed_model: str = "sentence-transformers/all-MiniLM-L6-v2"
+    embed_model_version: str = Field(default="1.0.0", description="Version identifier for embedding model compatibility")
     batch_size: int = 32
     openai_api_key: Optional[str] = None
     
