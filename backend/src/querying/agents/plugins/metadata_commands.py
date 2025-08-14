@@ -75,7 +75,7 @@ class FileInfo:
 @dataclass
 class MetadataQuery:
     """Structured metadata query parameters."""
-    operation: str  # get_latest_files, find_files_by_content, get_file_stats, etc.
+    operation: str  # get_latest_files, get_file_stats, etc.
     file_type: Optional[str] = None
     count: Optional[int] = None
     time_filter: Optional[str] = None  # "last_week", "last_month", etc.
@@ -149,8 +149,6 @@ class MetadataCommandsPlugin(Plugin):
                 # Keep legacy operations for backward compatibility
                 elif operation == "get_latest_files":
                     return self._get_latest_files(params, db_connection)
-                elif operation == "find_files_by_content":
-                    return self._find_files_by_content(params, db_connection)
                 elif operation == "get_file_stats":
                     return self._get_file_stats(params, db_connection)
                 elif operation == "get_file_count":
@@ -189,7 +187,6 @@ class MetadataCommandsPlugin(Plugin):
                 "file_types", # For introspection tests
                 # Legacy operations for backward compatibility
                 "get_latest_files",
-                "find_files_by_content", 
                 "get_file_stats",
                 "get_file_count",
                 "get_file_types"
@@ -727,92 +724,6 @@ class MetadataCommandsPlugin(Plugin):
             "response": response,
             "data": {"files": files_data},
             "metadata": {"operation": "get_latest_files", "count": len(results)}
-        }
-    
-    def _find_files_by_content(self, params: Dict[str, Any], db_connection) -> Dict[str, Any]:
-        """Find files containing specific keywords."""
-        cursor = db_connection.cursor()
-        
-        keywords = params.get("keywords", [])
-        file_type = params.get("file_type")
-        count = params.get("count", 20)
-        
-        if not keywords:
-            return {
-                "response": "No keywords specified for content search.",
-                "data": {"files": []},
-                "metadata": {"operation": "find_files_by_content", "error": "no_keywords"}
-            }
-        
-        conditions = []
-        query_params = []
-        
-        # Search in chunk content
-        keyword_conditions = []
-        for keyword in keywords:
-            keyword_conditions.append("content LIKE ?")
-            query_params.append(f"%{keyword}%")
-        
-        conditions.append(f"({' OR '.join(keyword_conditions)})")
-        conditions.append("current = 1")
-        
-        # Add file type filter if specified
-        if file_type:
-            ext_map = {
-                "PDF": ".pdf", "DOCX": ".docx", "DOC": ".doc", 
-                "XLSX": ".xlsx", "XLS": ".xls", "PPTX": ".pptx", 
-                "PPT": ".ppt", "MSG": ".msg", "TXT": ".txt"
-            }
-            ext = ext_map.get(file_type.upper())
-            if ext:
-                conditions.append("file LIKE ?")
-                query_params.append(f"%{ext}")
-        
-        where_clause = " AND ".join(conditions)
-        
-        query = f"""
-            SELECT DISTINCT file, MAX(mtime) as latest_mtime
-            FROM chunks 
-            WHERE {where_clause}
-            GROUP BY file 
-            ORDER BY latest_mtime DESC 
-            LIMIT ?
-        """
-        query_params.append(count)
-        
-        cursor.execute(query, query_params)
-        results = cursor.fetchall()
-        
-        if not results:
-            keywords_text = ", ".join(keywords)
-            type_text = f" {file_type}" if file_type else ""
-            return {
-                "response": f"No{type_text} files found containing keywords: {keywords_text}",
-                "data": {"files": []},
-                "metadata": {"operation": "find_files_by_content", "keywords": keywords}
-            }
-        
-        # Format response
-        file_list = []
-        files_data = []
-        
-        for file_path, modified_time in results:
-            file_name = Path(file_path).name
-            try:
-                date_str = datetime.fromtimestamp(modified_time).strftime("%Y-%m-%d")
-                file_list.append(f"• {file_name} ({date_str})")
-            except (ValueError, OSError):
-                file_list.append(f"• {file_name}")
-            files_data.append({"name": file_name, "path": file_path, "modified": modified_time})
-        
-        keywords_text = ", ".join(keywords)
-        type_text = f" {file_type}" if file_type else ""
-        response = f"Files{type_text} containing '{keywords_text}' ({len(results)} found):\n" + "\n".join(file_list)
-        
-        return {
-            "response": response,
-            "data": {"files": files_data},
-            "metadata": {"operation": "find_files_by_content", "count": len(results), "keywords": keywords}
         }
     
     def _get_file_stats(self, params: Dict[str, Any], db_connection) -> Dict[str, Any]:
