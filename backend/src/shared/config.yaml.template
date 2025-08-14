@@ -10,3 +10,10 @@ batch_size: 32
 # Get your key from: https://platform.openai.com/api-keys
 # Run 'python setup_openai.py' for secure setup
 openai_api_key: "your-openai-api-key-here"
+
+# Phase 1: Retrieval robustness parameters
+retrieval_k: 100              # Number of initial chunks to retrieve before MMR
+mmr_lambda: 0.7               # MMR balance: 1.0=pure relevance, 0.0=pure diversity  
+mmr_k: 20                     # Final number of chunks to return after MMR selection
+proper_noun_boost: 0.3        # Boost factor for metadata matches on proper noun queries
+enable_debug_logging: false   # Enable detailed debug logging for retrieval pipeline

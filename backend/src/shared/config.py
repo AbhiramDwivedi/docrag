@@ -17,6 +17,23 @@ class Settings(BaseModel):
     embed_model: str = "sentence-transformers/all-MiniLM-L6-v2"
     batch_size: int = 32
     openai_api_key: Optional[str] = None
+    
+    # Phase 1: Retrieval robustness parameters
+    retrieval_k: int = Field(default=100, ge=1, description="Number of initial chunks to retrieve before MMR")
+    mmr_lambda: float = Field(default=0.7, ge=0.0, le=1.0, description="MMR balance: 1.0=pure relevance, 0.0=pure diversity")
+    mmr_k: int = Field(default=20, ge=1, description="Final number of chunks to return after MMR selection")
+    proper_noun_boost: float = Field(default=0.3, ge=0.0, le=1.0, description="Boost factor for metadata matches on proper noun queries")
+    min_similarity_threshold: float = Field(default=0.1, ge=0.0, le=1.0, description="Minimum similarity threshold for considering results relevant")
+    enable_debug_logging: bool = Field(default=False, description="Enable detailed debug logging for retrieval pipeline")
+    enable_debug_logging: bool = Field(default=False, description="Enable detailed debug logging for retrieval pipeline")
+
+    @field_validator('mmr_k')
+    @classmethod
+    def validate_mmr_k_vs_retrieval_k(cls, v, info):
+        """Ensure mmr_k <= retrieval_k."""
+        if 'retrieval_k' in info.data and v > info.data['retrieval_k']:
+            raise ValueError(f"mmr_k ({v}) cannot be greater than retrieval_k ({info.data['retrieval_k']})")
+        return v
 
     @field_validator('sync_root', mode='before')
     @classmethod

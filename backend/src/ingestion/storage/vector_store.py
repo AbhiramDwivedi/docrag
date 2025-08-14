@@ -64,9 +64,22 @@ class VectorStore:
 
     def _load_index(self):
         if self.index_path.exists():
+            # Load existing index and check compatibility
             self.index = faiss.read_index(str(self.index_path))
+            
+            # Check if we need to migrate from L2 to IP index
+            index_type = type(self.index).__name__
+            if index_type == 'IndexFlatL2':
+                print(f"Warning: Detected L2 index at {self.index_path}. "
+                      f"For cosine similarity, consider rebuilding with normalized embeddings and IP index.")
+                # Keep the L2 index but log the incompatibility
+                # In production, you might want to trigger a re-indexing process
+            elif index_type != 'IndexFlatIP':
+                print(f"Warning: Unexpected index type {index_type}. Expected IndexFlatIP for cosine similarity.")
         else:
-            self.index = faiss.IndexFlatL2(self.dim)
+            # Use IndexFlatIP for cosine similarity with normalized vectors
+            # Inner product of normalized vectors equals cosine similarity
+            self.index = faiss.IndexFlatIP(self.dim)
 
     def _init_db(self):
         self.conn = sqlite3.connect(self.db_path)
@@ -183,6 +196,12 @@ class VectorStore:
     def upsert(self, chunk_ids: List[str], vectors: Any, metadata_rows: List[Tuple]):
         vectors = np.asarray(vectors, dtype='float32')
         
+        # Ensure vectors are normalized for cosine similarity with IndexFlatIP
+        # Normalize if not already normalized (check if any vector has norm != 1.0)
+        norms = np.linalg.norm(vectors, axis=1)
+        if not np.allclose(norms, 1.0, atol=1e-6):
+            vectors = vectors / norms.reshape(-1, 1)
+        
         # Get current FAISS index size to assign new indices
         current_size = self.index.ntotal
         
@@ -212,12 +231,20 @@ class VectorStore:
 
     def query(self, vector: Any, k: int = 8) -> List[dict]:
         vec = np.asarray(vector, dtype='float32').reshape(1, -1)
-        dists, idxs = self.index.search(vec, k)
+        
+        # Ensure query vector is normalized for cosine similarity
+        norm = np.linalg.norm(vec)
+        if norm > 0:
+            vec = vec / norm
+        
+        # IndexFlatIP returns similarity scores (higher = more similar)
+        # For cosine similarity with normalized vectors, scores are in [-1, 1]
+        scores, idxs = self.index.search(vec, k)
         
         # Map FAISS indices back to chunk data via SQLite
         results = []
         cur = self.conn.cursor()
-        for i, (dist, idx) in enumerate(zip(dists[0], idxs[0])):
+        for i, (score, idx) in enumerate(zip(scores[0], idxs[0])):
             if idx == -1:  # FAISS returns -1 for empty slots
                 continue
             # Get chunk by FAISS index with document metadata
@@ -226,12 +253,16 @@ class VectorStore:
                           FROM chunks WHERE faiss_idx = ? AND current = 1""", (int(idx),))
             row = cur.fetchone()
             if row:
+                # Convert similarity score to distance for backward compatibility
+                # Distance = 1 - similarity (so 0 = perfect match, 2 = worst match)
+                distance = 1.0 - float(score)
                 results.append({
                     'id': row[0],
                     'file': row[1], 
                     'unit': row[2],
                     'text': row[3],
-                    'distance': float(dist),
+                    'distance': distance,
+                    'similarity': float(score),  # Also provide raw similarity score
                     'document_id': row[4],
                     'document_path': row[5],
                     'document_title': row[6],
