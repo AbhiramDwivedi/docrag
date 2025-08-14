@@ -68,13 +68,25 @@ class EmbeddingMigrator:
         
         if self.db_path.exists():
             import shutil
-            shutil.copy2(self.db_path, backup_db)
-            rprint(f"   ✅ Database backed up to: {backup_db}")
+            try:
+                shutil.copy2(self.db_path, backup_db)
+                # Verify backup was created successfully
+                if not backup_db.exists() or backup_db.stat().st_size == 0:
+                    raise RuntimeError(f"Database backup verification failed: {backup_db}")
+                rprint(f"   ✅ Database backed up to: {backup_db}")
+            except (OSError, shutil.Error) as e:
+                raise RuntimeError(f"Failed to create database backup: {e}")
         
         if self.vector_path.exists():
             import shutil
-            shutil.copy2(self.vector_path, backup_vector)
-            rprint(f"   ✅ Vector index backed up to: {backup_vector}")
+            try:
+                shutil.copy2(self.vector_path, backup_vector)
+                # Verify backup was created successfully
+                if not backup_vector.exists() or backup_vector.stat().st_size == 0:
+                    raise RuntimeError(f"Vector index backup verification failed: {backup_vector}")
+                rprint(f"   ✅ Vector index backed up to: {backup_vector}")
+            except (OSError, shutil.Error) as e:
+                raise RuntimeError(f"Failed to create vector index backup: {e}")
         
         # Save backup info
         backup_info = {
@@ -87,14 +99,59 @@ class EmbeddingMigrator:
             "vector_backup": str(backup_vector)
         }
         
-        with open(self.backup_dir / f"backup_info_{timestamp}.json", 'w') as f:
-            json.dump(backup_info, f, indent=2)
+        backup_info_path = self.backup_dir / f"backup_info_{timestamp}.json"
+        try:
+            with open(backup_info_path, 'w') as f:
+                json.dump(backup_info, f, indent=2)
+            
+            # Verify backup info was written successfully
+            if not backup_info_path.exists():
+                raise RuntimeError(f"Backup info file creation failed: {backup_info_path}")
+        except (OSError, json.JSONEncodeError) as e:
+            raise RuntimeError(f"Failed to save backup info: {e}")
             
     def load_progress(self) -> Dict:
         """Load migration progress from file."""
-        if self.progress_file.exists():
-            with open(self.progress_file, 'r') as f:
-                return json.load(f)
+        try:
+            if self.progress_file.exists():
+                with open(self.progress_file, 'r') as f:
+                    progress = json.load(f)
+                    
+                # Validate progress data structure
+                required_keys = ["total_chunks", "processed_chunks", "last_chunk_id", 
+                               "target_model", "target_version", "started_at", "completed"]
+                for key in required_keys:
+                    if key not in progress:
+                        self.logger.warning(f"Missing key '{key}' in progress file, using default")
+                        progress[key] = self._get_default_progress_value(key)
+                        
+                return progress
+        except (json.JSONDecodeError, OSError) as e:
+            self.logger.error(f"Failed to load progress file: {e}. Starting fresh migration.")
+            # Remove corrupted progress file
+            if self.progress_file.exists():
+                try:
+                    self.progress_file.unlink()
+                except OSError:
+                    pass
+                    
+        return self._get_default_progress()
+    
+    def _get_default_progress_value(self, key: str):
+        """Get default value for a progress key."""
+        defaults = {
+            "total_chunks": 0,
+            "processed_chunks": 0,
+            "last_chunk_id": 0,
+            "target_model": self.target_model,
+            "target_version": self.target_version,
+            "started_at": None,
+            "completed": False
+        }
+        return defaults.get(key, None)
+    
+    def _get_default_progress(self) -> Dict:
+        """Get default progress structure."""
         return {
             "total_chunks": 0,
             "processed_chunks": 0,
@@ -107,8 +164,25 @@ class EmbeddingMigrator:
     
     def save_progress(self, progress: Dict) -> None:
         """Save migration progress to file."""
-        with open(self.progress_file, 'w') as f:
-            json.dump(progress, f, indent=2)
+        try:
+            # Ensure progress directory exists
+            self.progress_file.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Write to a temporary file first, then rename for atomic operation
+            temp_file = self.progress_file.with_suffix('.tmp')
+            with open(temp_file, 'w') as f:
+                json.dump(progress, f, indent=2)
+            
+            # Verify temp file was written successfully
+            if not temp_file.exists() or temp_file.stat().st_size == 0:
+                raise RuntimeError("Progress file write verification failed")
+                
+            # Atomic rename
+            temp_file.rename(self.progress_file)
+            
+        except (OSError, json.JSONEncodeError) as e:
+            self.logger.error(f"Failed to save progress: {e}")
+            raise RuntimeError(f"Progress save failed: {e}")
     
     def get_chunk_data(self, start_id: int = 0) -> List[Tuple[int, str]]:
         """Get chunk text data from database starting from given ID."""
@@ -261,16 +335,38 @@ class EmbeddingMigrator:
     
     def update_chunk_mappings(self, chunk_id_to_index: Dict[int, int]) -> None:
         """Update database with new chunk-to-vector mappings."""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        for chunk_id, vector_idx in chunk_id_to_index.items():
-            cursor.execute("""
-                UPDATE chunks SET vector_index = ? WHERE id = ?
-            """, (vector_idx, chunk_id))
-        
-        conn.commit()
-        conn.close()
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # Use transaction for atomicity
+            cursor.execute("BEGIN TRANSACTION")
+            
+            try:
+                for chunk_id, vector_idx in chunk_id_to_index.items():
+                    cursor.execute("""
+                        UPDATE chunks SET vector_index = ? WHERE id = ?
+                    """, (vector_idx, chunk_id))
+                
+                # Verify updates were applied
+                cursor.execute("SELECT COUNT(*) FROM chunks WHERE vector_index IS NOT NULL")
+                updated_count = cursor.fetchone()[0]
+                
+                if updated_count == 0:
+                    raise RuntimeError("No chunk mappings were updated")
+                
+                cursor.execute("COMMIT")
+                self.logger.info(f"Successfully updated {len(chunk_id_to_index)} chunk mappings")
+                
+            except Exception as e:
+                cursor.execute("ROLLBACK")
+                raise RuntimeError(f"Database update failed, rolled back: {e}")
+                
+        except sqlite3.Error as e:
+            raise RuntimeError(f"Database connection error: {e}")
+        finally:
+            if 'conn' in locals():
+                conn.close()
 
 def main():
     parser = argparse.ArgumentParser(description="Migrate embeddings to a new model")

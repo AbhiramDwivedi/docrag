@@ -130,6 +130,7 @@ def embed_texts(texts: List[str], model_name: str, normalize: bool = True, text_
         texts: List of texts to embed
         model_name: Name of the sentence transformer model
         normalize: Whether to normalize embeddings for cosine similarity (default: True)
+                  Set to False if you need raw embeddings for specific analysis
         text_type: Type of text - "query" or "passage" for model-specific formatting
         
     Returns:

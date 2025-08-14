@@ -19,6 +19,40 @@ class Settings(BaseModel):
     batch_size: int = 32
     openai_api_key: Optional[str] = None
     
+    @field_validator('embed_model_version')
+    @classmethod
+    def validate_model_version_consistency(cls, v, info):
+        """Validate that model version is consistent with model name."""
+        if 'embed_model' in info.data:
+            model_name = info.data['embed_model']
+            
+            # Define version mappings for known models
+            known_model_versions = {
+                "sentence-transformers/all-MiniLM-L6-v2": ["1.0.0"],
+                "intfloat/e5-base-v2": ["2.0.0"],
+                "intfloat/e5-small-v2": ["2.0.0"],
+                "intfloat/e5-large-v2": ["2.0.0"],
+                "BAAI/bge-small-en-v1.5": ["2.0.0"],
+                "BAAI/bge-base-en-v1.5": ["2.0.0"],
+                "BAAI/bge-large-en-v1.5": ["2.0.0"],
+                "thenlper/gte-base": ["2.0.0"],
+                "thenlper/gte-small": ["2.0.0"],
+                "thenlper/gte-large": ["2.0.0"]
+            }
+            
+            if model_name in known_model_versions:
+                expected_versions = known_model_versions[model_name]
+                if v not in expected_versions:
+                    # Allow version override with warning, don't fail
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(
+                        f"Model version '{v}' may not be compatible with model '{model_name}'. "
+                        f"Expected versions: {expected_versions}"
+                    )
+        
+        return v
+    
     # Phase 1: Retrieval robustness parameters
     retrieval_k: int = Field(default=100, ge=1, description="Number of initial chunks to retrieve before MMR")
     mmr_lambda: float = Field(default=0.7, ge=0.0, le=1.0, description="MMR balance: 1.0=pure relevance, 0.0=pure diversity")
