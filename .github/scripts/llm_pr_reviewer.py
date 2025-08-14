@@ -132,7 +132,7 @@ Respond with a JSON object of the form: {{"anchors": ["path1", "path2"]}}. If no
 client = OpenAI(api_key=OPENAI_API_KEY)
 
 sel = client.chat.completions.create(
-    model="gpt-4o-mini",
+    model="gpt-5-mini",
     messages=[
         {"role": "system", "content": "You are a pragmatic code reviewer that selects minimal extra context to inspect."},
         {"role": "user", "content": selection_prompt},
@@ -215,7 +215,7 @@ Only report HIGH-FIDELITY issues with concrete evidence and impact. If none exis
 """
 
 review_resp = client.chat.completions.create(
-    model="o3-mini",
+    model="gpt-5-mini",
     messages=[
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": prompt},
