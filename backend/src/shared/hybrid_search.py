@@ -5,25 +5,47 @@ from typing import List, Tuple, Dict, Any
 
 
 def normalize_scores(scores: List[float], method: str = "min-max") -> List[float]:
-    """Normalize scores to [0, 1] range."""
+    """Normalize scores to [0, 1] range with robust handling of edge cases."""
     if not scores:
         return []
     
     scores_array = np.array(scores)
     
+    # Handle NaN and infinite values
+    finite_mask = np.isfinite(scores_array)
+    if not np.any(finite_mask):
+        # All values are non-finite, return zeros
+        return [0.0] * len(scores)
+    
     if method == "min-max":
-        min_score = np.min(scores_array)
-        max_score = np.max(scores_array)
+        finite_scores = scores_array[finite_mask]
+        min_score = np.min(finite_scores)
+        max_score = np.max(finite_scores)
+        
         if max_score == min_score:
-            return [1.0] * len(scores)
-        return ((scores_array - min_score) / (max_score - min_score)).tolist()
+            return [1.0 if finite_mask[i] else 0.0 for i in range(len(scores))]
+        
+        normalized = np.zeros_like(scores_array)
+        normalized[finite_mask] = (finite_scores - min_score) / (max_score - min_score)
+        # Non-finite values become 0.0
+        normalized[~finite_mask] = 0.0
+        
+        return normalized.tolist()
     
     elif method == "z-score":
-        mean_score = np.mean(scores_array)
-        std_score = np.std(scores_array)
+        finite_scores = scores_array[finite_mask]
+        mean_score = np.mean(finite_scores)
+        std_score = np.std(finite_scores)
+        
         if std_score == 0:
             return [0.0] * len(scores)
-        return ((scores_array - mean_score) / std_score).tolist()
+        
+        normalized = np.zeros_like(scores_array)
+        normalized[finite_mask] = (finite_scores - mean_score) / std_score
+        # Non-finite values become 0.0
+        normalized[~finite_mask] = 0.0
+        
+        return normalized.tolist()
     
     else:
         raise ValueError(f"Unknown normalization method: {method}")

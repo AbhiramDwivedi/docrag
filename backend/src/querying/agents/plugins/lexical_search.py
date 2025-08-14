@@ -66,7 +66,7 @@ class LexicalSearchPlugin(Plugin):
         )
     
     def execute(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute lexical search.
+        """Execute lexical search with comprehensive input validation.
         
         Args:
             params: Search parameters including query, limit, etc.
@@ -74,17 +74,35 @@ class LexicalSearchPlugin(Plugin):
         Returns:
             Search results with lexical scores and metadata
         """
-        query = params.get("query", "").strip()
-        limit = params.get("limit", 20)
-        exact_phrase = params.get("exact_phrase", False)
-        prefix_match = params.get("prefix_match", False)
+        # Input validation and sanitization
+        query = params.get("query", "")
+        if not isinstance(query, str):
+            return {
+                "response": "Invalid query parameter: must be a string.",
+                "sources": [],
+                "metadata": {"error": "invalid_query_type", "results_count": 0}
+            }
         
+        query = query.strip()
         if not query:
             return {
                 "response": "No search query provided.",
                 "sources": [],
                 "metadata": {"error": "empty_query", "results_count": 0}
             }
+        
+        # Validate and sanitize limit parameter
+        limit = params.get("limit", 20)
+        try:
+            limit = int(limit)
+            if limit <= 0 or limit > 100:  # Reasonable limits
+                limit = 20
+        except (ValueError, TypeError):
+            limit = 20
+        
+        # Validate boolean parameters
+        exact_phrase = bool(params.get("exact_phrase", False))
+        prefix_match = bool(params.get("prefix_match", False))
         
         try:
             # Check FTS5 availability and index existence
@@ -140,7 +158,7 @@ class LexicalSearchPlugin(Plugin):
             }
             
         except Exception as e:
-            logger.error(f"Lexical search failed: {e}")
+            logger.error(f"Lexical search failed: {e}", exc_info=True)
             return {
                 "response": f"Lexical search failed: {str(e)}",
                 "sources": [],
@@ -196,12 +214,17 @@ class LexicalSearchPlugin(Plugin):
         Returns:
             List of (chunk_id, score, content, file_path) tuples
         """
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
+        conn = None
         try:
-            # Prepare FTS5 query
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # Prepare FTS5 query with sanitization
             fts_query = self._prepare_fts5_query(query, exact_phrase, prefix_match)
+            
+            if not fts_query:  # Empty after sanitization
+                logger.warning(f"Query became empty after sanitization: '{query}'")
+                return []
             
             # Execute FTS5 search with BM25 ranking
             cursor.execute("""
@@ -223,14 +246,21 @@ class LexicalSearchPlugin(Plugin):
             
         except sqlite3.OperationalError as e:
             logger.error(f"FTS5 query failed: {e}")
-            logger.error(f"Query was: {fts_query}")
+            logger.error(f"Original query: '{query}', Prepared query: '{fts_query if 'fts_query' in locals() else 'N/A'}'")
+            return []
+        except sqlite3.Error as e:
+            logger.error(f"Database error during FTS5 search: {e}")
+            return []
+        except Exception as e:
+            logger.error(f"Unexpected error during FTS5 search: {e}", exc_info=True)
             return []
         finally:
-            conn.close()
+            if conn:
+                conn.close()
     
     def _prepare_fts5_query(self, query: str, exact_phrase: bool = False, 
                            prefix_match: bool = False) -> str:
-        """Prepare query string for FTS5 MATCH syntax.
+        """Prepare query string for FTS5 MATCH syntax with input sanitization.
         
         Args:
             query: Original search query
@@ -238,23 +268,82 @@ class LexicalSearchPlugin(Plugin):
             prefix_match: Whether to enable prefix matching
             
         Returns:
-            FTS5-formatted query string
+            FTS5-formatted query string, properly sanitized
         """
-        # Escape special FTS5 characters
-        query = query.replace('"', '""')
+        # Input validation
+        if not query or not isinstance(query, str):
+            return ""
+        
+        # Remove potentially dangerous characters and limit length
+        query = query.strip()[:1000]  # Limit query length to prevent DoS
+        
+        # Comprehensive sanitization for FTS5 special characters
+        query = self._sanitize_fts5_input(query)
+        
+        if not query:  # Return empty if nothing left after sanitization
+            return ""
         
         if exact_phrase:
-            # Exact phrase search
+            # Exact phrase search - double quotes are already escaped
             return f'"{query}"'
         elif prefix_match:
             # Prefix matching - add * to each term
             terms = query.split()
-            return " ".join(f"{term}*" for term in terms)
+            sanitized_terms = []
+            for term in terms:
+                if term and term.isalnum():  # Only allow alphanumeric terms for prefix
+                    sanitized_terms.append(f"{term}*")
+            return " ".join(sanitized_terms) if sanitized_terms else ""
         else:
-            # Standard search - let FTS5 handle it
-            # For boolean queries (AND, OR, NOT), return as-is
-            # For simple queries, FTS5 treats space as implicit AND
+            # Standard search - return sanitized query
             return query
+    
+    def _sanitize_fts5_input(self, query: str) -> str:
+        """Sanitize input to prevent FTS5 injection and other security issues.
+        
+        Args:
+            query: Raw query string
+            
+        Returns:
+            Sanitized query string safe for FTS5 use
+        """
+        import re
+        
+        # Escape double quotes (FTS5 special character)
+        query = query.replace('"', '""')
+        
+        # Remove or escape other potentially dangerous FTS5 characters
+        # FTS5 special characters: " * ( ) [ ] { } ^ ~ : + - 
+        dangerous_chars = {
+            '*': '',  # Remove wildcard unless explicitly added for prefix
+            '(': '',  # Remove grouping
+            ')': '', 
+            '[': '',  # Remove column filters
+            ']': '',
+            '{': '',  # Remove proximity operators  
+            '}': '',
+            '^': '',  # Remove column filters
+            '~': '',  # Remove proximity operators
+            ':': '',  # Remove column specifiers
+            '+': '',  # Remove required terms (can cause issues)
+            '\\': '', # Remove escape characters
+            ';': '',  # Remove SQL statement terminators
+            '--': '', # Remove SQL comments
+            '/*': '', # Remove SQL comments
+            '*/': '', # Remove SQL comments
+        }
+        
+        for char, replacement in dangerous_chars.items():
+            query = query.replace(char, replacement)
+        
+        # Remove excessive whitespace and normalize
+        query = ' '.join(query.split())
+        
+        # Additional safety: only allow alphanumeric, spaces, and basic punctuation
+        # This regex allows letters, numbers, spaces, hyphens, underscores, and periods
+        query = re.sub(r'[^a-zA-Z0-9\s\-_.]', '', query)
+        
+        return query.strip()
     
     def search_raw(self, query: str, limit: int = 20) -> List[Tuple[str, float]]:
         """Raw search method for hybrid search integration.
