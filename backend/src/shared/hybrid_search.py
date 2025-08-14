@@ -1,0 +1,157 @@
+"""Hybrid search utilities for combining dense and lexical search results."""
+
+import numpy as np
+from typing import List, Tuple, Dict, Any
+
+
+def normalize_scores(scores: List[float], method: str = "min-max") -> List[float]:
+    """Normalize scores to [0, 1] range."""
+    if not scores:
+        return []
+    
+    scores_array = np.array(scores)
+    
+    if method == "min-max":
+        min_score = np.min(scores_array)
+        max_score = np.max(scores_array)
+        if max_score == min_score:
+            return [1.0] * len(scores)
+        return ((scores_array - min_score) / (max_score - min_score)).tolist()
+    
+    elif method == "z-score":
+        mean_score = np.mean(scores_array)
+        std_score = np.std(scores_array)
+        if std_score == 0:
+            return [0.0] * len(scores)
+        return ((scores_array - mean_score) / std_score).tolist()
+    
+    else:
+        raise ValueError(f"Unknown normalization method: {method}")
+
+
+def merge_search_results(
+    dense_results: List[Tuple[str, float]],
+    lexical_results: List[Tuple[str, float]],
+    dense_weight: float = 0.6,
+    lexical_weight: float = 0.4,
+    normalize_method: str = "min-max"
+) -> List[Tuple[str, float]]:
+    """
+    Merge dense and lexical search results with score normalization.
+    
+    Args:
+        dense_results: List of (doc_id, score) from vector search
+        lexical_results: List of (doc_id, score) from FTS search
+        dense_weight: Weight for dense scores
+        lexical_weight: Weight for lexical scores
+        normalize_method: Score normalization method
+        
+    Returns:
+        Merged and deduplicated results sorted by combined score
+    """
+    # Normalize scores within each result set
+    if dense_results:
+        dense_scores = [score for _, score in dense_results]
+        normalized_dense = normalize_scores(dense_scores, normalize_method)
+        dense_normalized = [(doc_id, norm_score) for (doc_id, _), norm_score in 
+                           zip(dense_results, normalized_dense)]
+    else:
+        dense_normalized = []
+    
+    if lexical_results:
+        lexical_scores = [score for _, score in lexical_results]
+        normalized_lexical = normalize_scores(lexical_scores, normalize_method)
+        lexical_normalized = [(doc_id, norm_score) for (doc_id, _), norm_score in 
+                             zip(lexical_results, normalized_lexical)]
+    else:
+        lexical_normalized = []
+    
+    # Create combined score dictionary
+    combined_scores = {}
+    
+    # Add dense scores
+    for doc_id, norm_score in dense_normalized:
+        combined_scores[doc_id] = dense_weight * norm_score
+    
+    # Add lexical scores
+    for doc_id, norm_score in lexical_normalized:
+        if doc_id in combined_scores:
+            combined_scores[doc_id] += lexical_weight * norm_score
+        else:
+            combined_scores[doc_id] = lexical_weight * norm_score
+    
+    # Sort by combined score (descending) with stable tie-breaking by doc_id
+    sorted_results = sorted(
+        combined_scores.items(),
+        key=lambda x: (-x[1], x[0])  # Score desc, doc_id asc for tie-breaking
+    )
+    
+    return sorted_results
+
+
+def classify_query_intent(query: str) -> Dict[str, Any]:
+    """
+    Classify query intent to determine search strategy.
+    
+    Args:
+        query: The search query string
+        
+    Returns:
+        Dictionary with classification results:
+        - strategy: "hybrid", "semantic_primary", or "lexical_primary"
+        - confidence: confidence score (0-1)
+        - proper_nouns: list of detected proper nouns
+        - keywords: list of detected keywords
+    """
+    import re
+    
+    query_lower = query.lower().strip()
+    
+    # Detect proper nouns (capitalized words)
+    proper_nouns = re.findall(r'\b[A-Z][A-Z0-9]*\b', query)  # All caps words
+    proper_nouns += re.findall(r'\b[A-Z][a-z]+\b', query)    # Title case words
+    
+    # Detect common keywords that suggest lexical search
+    lexical_keywords = [
+        'containing', 'includes', 'mentions', 'keyword', 'exact', 'phrase',
+        'find files', 'search for', 'documents with', 'files containing'
+    ]
+    
+    # Detect semantic indicators
+    semantic_keywords = [
+        'about', 'regarding', 'related to', 'similar to', 'like',
+        'explain', 'what is', 'how to', 'why', 'concept'
+    ]
+    
+    # Count indicators
+    lexical_score = sum(1 for kw in lexical_keywords if kw in query_lower)
+    semantic_score = sum(1 for kw in semantic_keywords if kw in query_lower)
+    
+    # Query length analysis
+    word_count = len(query.split())
+    
+    # Classification logic
+    if lexical_score > semantic_score:
+        strategy = "lexical_primary"
+        confidence = min(0.9, 0.6 + lexical_score * 0.1)
+    elif proper_nouns and word_count <= 5:
+        # Short queries with proper nouns benefit from hybrid
+        strategy = "hybrid"
+        confidence = min(0.8, 0.5 + len(proper_nouns) * 0.1)
+    elif word_count <= 3:
+        # Very short queries benefit from hybrid
+        strategy = "hybrid" 
+        confidence = 0.7
+    else:
+        # Complex queries go to semantic primarily
+        strategy = "semantic_primary"
+        confidence = min(0.9, 0.6 + semantic_score * 0.1)
+    
+    return {
+        "strategy": strategy,
+        "confidence": confidence,
+        "proper_nouns": proper_nouns,
+        "word_count": word_count,
+        "lexical_score": lexical_score,
+        "semantic_score": semantic_score
+    }

@@ -17,3 +17,10 @@ mmr_lambda: 0.7               # MMR balance: 1.0=pure relevance, 0.0=pure divers
 mmr_k: 20                     # Final number of chunks to return after MMR selection
 proper_noun_boost: 0.3        # Boost factor for metadata matches on proper noun queries
 enable_debug_logging: false   # Enable detailed debug logging for retrieval pipeline
+
+# Phase 2: Hybrid lexical search configuration
+enable_hybrid_search: true    # Enable hybrid semantic + lexical search
+hybrid_dense_weight: 0.6      # Weight for semantic search results in hybrid mode
+hybrid_lexical_weight: 0.4    # Weight for lexical search results in hybrid mode
+hybrid_score_normalize: "min-max"  # Score normalization method: "min-max" or "z-score"
+enable_query_classification: true  # Enable automatic query intent classification

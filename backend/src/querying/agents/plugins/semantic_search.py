@@ -21,6 +21,7 @@ try:
     from ingestion.storage.vector_store import VectorStore
     from shared.config import settings
     from shared.mmr import mmr_selection, extract_embeddings_from_results
+    from shared.hybrid_search import merge_search_results, classify_query_intent
 except ImportError:
     # Fallback to absolute imports
     try:
@@ -28,6 +29,7 @@ except ImportError:
         from src.ingestion.storage.vector_store import VectorStore
         from src.shared.config import settings
         from src.shared.mmr import mmr_selection, extract_embeddings_from_results
+        from src.shared.hybrid_search import merge_search_results, classify_query_intent
     except ImportError:
         # Last resort - relative imports from backend root
         import os
@@ -37,6 +39,7 @@ except ImportError:
         from src.ingestion.storage.vector_store import VectorStore
         from src.shared.config import settings
         from src.shared.mmr import mmr_selection, extract_embeddings_from_results
+        from src.shared.hybrid_search import merge_search_results, classify_query_intent
 
 from openai import OpenAI
 
@@ -58,16 +61,18 @@ class SemanticSearchPlugin(Plugin):
         """Initialize the semantic search plugin."""
         self._vector_store = None
         self._openai_client = None
+        self._lexical_plugin = None
     
     def execute(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute enhanced semantic search with robustness improvements.
+        """Execute enhanced semantic search with hybrid search support.
         
-        Implements multi-stage search process:
-        1. Query Analysis - Detect entity/proper noun queries
-        2. Initial Retrieval - Vector search for top-k chunks
-        3. MMR Selection - Select diverse relevant chunks
-        4. Optional Metadata Boosting - Boost document-name matches
-        5. Response Generation - Synthesize answer with attribution
+        Implements multi-stage search process with optional hybrid lexical search:
+        1. Query Analysis - Detect entity/proper noun queries and classify intent
+        2. Strategy Selection - Choose semantic-only, lexical-only, or hybrid approach
+        3. Search Execution - Run appropriate search strategy
+        4. Result Merging - Combine and deduplicate results if hybrid
+        5. MMR Selection - Select diverse relevant chunks
+        6. Response Generation - Synthesize answer with attribution
         
         Args:
             params: Dictionary containing:
@@ -77,6 +82,8 @@ class SemanticSearchPlugin(Plugin):
                 - mmr_k: Final number of chunks after MMR (default: from config)
                 - enable_mmr: Whether to use MMR selection (default: True)
                 - include_metadata_boost: Include metadata/filename boosting (default: auto-detect)
+                - force_semantic_only: Force semantic search only (default: False)
+                - force_hybrid: Force hybrid search (default: False)
                 
         Returns:
             Dictionary containing:
@@ -90,6 +97,8 @@ class SemanticSearchPlugin(Plugin):
         mmr_k = params.get("mmr_k", settings.mmr_k)
         enable_mmr = params.get("enable_mmr", True)
         include_metadata_boost = params.get("include_metadata_boost", None)  # Auto-detect if None
+        force_semantic_only = params.get("force_semantic_only", False)
+        force_hybrid = params.get("force_hybrid", False)
         
         if not question.strip():
             return {
@@ -98,13 +107,32 @@ class SemanticSearchPlugin(Plugin):
                 "metadata": {"error": "empty_question"}
             }
         
-        # Stage 1: Query Analysis
+        # Stage 1: Query Analysis and Strategy Selection
         query_analysis = self._analyze_query(question)
+        
+        # Determine search strategy
+        use_hybrid = False
+        search_strategy = "semantic_only"
+        
+        if force_semantic_only:
+            search_strategy = "semantic_only"
+        elif force_hybrid:
+            use_hybrid = True
+            search_strategy = "hybrid"
+        elif getattr(settings, 'enable_hybrid_search', True) and getattr(settings, 'enable_query_classification', True):
+            # Use query classification to determine strategy
+            intent_analysis = classify_query_intent(question)
+            if intent_analysis["strategy"] in ["hybrid", "lexical_primary"]:
+                use_hybrid = True
+                search_strategy = intent_analysis["strategy"]
+                query_analysis.update(intent_analysis)
+        
         if include_metadata_boost is None:
             include_metadata_boost = query_analysis.get("likely_entity_query", False)
             
         if settings.enable_debug_logging:
             logger.info(f"Query analysis: {query_analysis}")
+            logger.info(f"Search strategy: {search_strategy}, use_hybrid: {use_hybrid}")
             logger.info(f"Using k={k}, mmr_lambda={mmr_lambda}, mmr_k={mmr_k}, metadata_boost={include_metadata_boost}")
         
         try:
@@ -127,39 +155,25 @@ class SemanticSearchPlugin(Plugin):
                     Path(settings.db_path)
                 )
             
-            # Stage 2: Initial Retrieval - Vector search for top-k chunks
-            if settings.enable_debug_logging:
-                logger.info(f"Starting initial retrieval with k={k}")
-                
-            q_vec = embed_texts([question], settings.embed_model)[0]
-            initial_results = self._vector_store.query(q_vec, k=k)
-            
-            if settings.enable_debug_logging:
-                logger.info(f"Initial retrieval returned {len(initial_results)} results")
-                if initial_results:
-                    logger.info(f"Top result similarity: {initial_results[0].get('similarity', 'N/A')}")
+            # Stage 2: Execute search strategy
+            if use_hybrid:
+                initial_results = self._execute_hybrid_search(question, k, query_analysis)
+            else:
+                initial_results = self._execute_semantic_search(question, k, query_analysis)
             
             if not initial_results:
-                # Try with expanded retrieval as fallback
-                if settings.enable_debug_logging:
-                    logger.info("No results found, attempting expanded retrieval with higher k")
-                
-                # Try with double the k to catch more marginal matches
-                fallback_k = min(k * 2, 200)  # Cap at reasonable limit
-                initial_results = self._vector_store.query(q_vec, k=fallback_k)
-                
-                if not initial_results:
-                    return {
-                        "response": ("No relevant documents found in the knowledge base. "
-                                   "Try rephrasing your question or checking if documents have been properly ingested."),
-                        "sources": [],
-                        "metadata": {
-                            "results_count": 0, 
-                            "stage": "expanded_retrieval_failed",
-                            "fallback_k": fallback_k,
-                            "query_analysis": query_analysis
-                        }
+                return {
+                    "response": ("No relevant documents found in the knowledge base. "
+                               "Try rephrasing your question or checking if documents have been properly ingested."),
+                    "sources": [],
+                    "metadata": {
+                        "results_count": 0, 
+                        "stage": "search_failed",
+                        "search_strategy": search_strategy,
+                        "query_analysis": query_analysis
                     }
+                }
+            
             
             # Check for low-quality results - if all results have very low similarity, provide helpful response
             if initial_results:
@@ -189,6 +203,7 @@ class SemanticSearchPlugin(Plugin):
                             "max_similarity": max_similarity,
                             "threshold": min_similarity_threshold,
                             "stage": "low_quality_results",
+                            "search_strategy": search_strategy,
                             "query_analysis": query_analysis
                         }
                     }
@@ -277,6 +292,7 @@ Answer:"""
                 "mmr_lambda": mmr_lambda if enable_mmr else None,
                 "metadata_boost_enabled": include_metadata_boost,
                 "query_analysis": query_analysis,
+                "search_strategy": search_strategy,
                 "model_used": "gpt-4o-mini",
                 "embedding_model": settings.embed_model,
                 "context_length": len(enhanced_context),
@@ -294,8 +310,227 @@ Answer:"""
             return {
                 "response": f"❌ Error calling OpenAI API: {e}\nPlease check your API key in config/config.yaml",
                 "sources": [],
-                "metadata": {"error": str(e), "query_analysis": query_analysis}
+                "metadata": {"error": str(e), "query_analysis": query_analysis, "search_strategy": search_strategy}
             }
+    
+    def _execute_semantic_search(self, question: str, k: int, query_analysis: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Execute semantic search only.
+        
+        Args:
+            question: The search question
+            k: Number of chunks to retrieve
+            query_analysis: Query analysis results
+            
+        Returns:
+            List of search results
+        """
+        if settings.enable_debug_logging:
+            logger.info(f"Starting semantic search with k={k}")
+            
+        q_vec = embed_texts([question], settings.embed_model)[0]
+        initial_results = self._vector_store.query(q_vec, k=k)
+        
+        if settings.enable_debug_logging:
+            logger.info(f"Semantic search returned {len(initial_results)} results")
+            if initial_results:
+                logger.info(f"Top result similarity: {initial_results[0].get('similarity', 'N/A')}")
+        
+        if not initial_results:
+            # Try with expanded retrieval as fallback
+            if settings.enable_debug_logging:
+                logger.info("No results found, attempting expanded retrieval with higher k")
+            
+            # Try with double the k to catch more marginal matches
+            fallback_k = min(k * 2, 200)  # Cap at reasonable limit
+            initial_results = self._vector_store.query(q_vec, k=fallback_k)
+            
+            if settings.enable_debug_logging:
+                logger.info(f"Fallback retrieval with k={fallback_k} returned {len(initial_results)} results")
+        
+        return initial_results
+    
+    def _execute_hybrid_search(self, question: str, k: int, query_analysis: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Execute hybrid semantic + lexical search.
+        
+        Args:
+            question: The search question
+            k: Number of chunks to retrieve from each method
+            query_analysis: Query analysis results
+            
+        Returns:
+            List of merged and deduplicated search results
+        """
+        if settings.enable_debug_logging:
+            logger.info(f"Starting hybrid search with k={k}")
+        
+        # Execute semantic search
+        q_vec = embed_texts([question], settings.embed_model)[0]
+        semantic_results = self._vector_store.query(q_vec, k=k)
+        
+        if settings.enable_debug_logging:
+            logger.info(f"Semantic component returned {len(semantic_results)} results")
+        
+        # Execute lexical search
+        lexical_results = []
+        try:
+            if self._lexical_plugin is None:
+                from .lexical_search import LexicalSearchPlugin
+                self._lexical_plugin = LexicalSearchPlugin()
+            
+            lexical_raw_results = self._lexical_plugin.search_raw(question, k)
+            
+            if settings.enable_debug_logging:
+                logger.info(f"Lexical component returned {len(lexical_raw_results)} results")
+            
+            # Convert lexical results to semantic result format for merging
+            if lexical_raw_results:
+                # Get full chunk data for lexical results
+                lexical_results = self._convert_lexical_to_semantic_format(lexical_raw_results)
+            
+        except Exception as e:
+            logger.warning(f"Lexical search failed, continuing with semantic only: {e}")
+            lexical_results = []
+        
+        # Merge results if we have both types
+        if semantic_results and lexical_results:
+            merged_results = self._merge_semantic_lexical_results(
+                semantic_results, lexical_results, query_analysis
+            )
+            if settings.enable_debug_logging:
+                logger.info(f"Merged results: {len(merged_results)} total")
+            return merged_results
+        elif semantic_results:
+            if settings.enable_debug_logging:
+                logger.info("Using semantic results only (lexical failed or empty)")
+            return semantic_results
+        else:
+            if settings.enable_debug_logging:
+                logger.info("Using lexical results only (semantic failed or empty)")
+            return lexical_results
+    
+    def _convert_lexical_to_semantic_format(self, lexical_results: List[Tuple[str, float]]) -> List[Dict[str, Any]]:
+        """Convert lexical search results to semantic result format.
+        
+        Args:
+            lexical_results: List of (chunk_id, score) from lexical search
+            
+        Returns:
+            List of results in semantic search format
+        """
+        # Query database to get full chunk information
+        import sqlite3
+        
+        converted_results = []
+        try:
+            conn = sqlite3.connect(self._vector_store.db_path)
+            cursor = conn.cursor()
+            
+            for chunk_id, lexical_score in lexical_results:
+                cursor.execute("""
+                    SELECT c.content, c.file_path, c.chunk_index, c.chunk_id,
+                           f.file_name, f.document_title, f.document_id
+                    FROM chunks c
+                    LEFT JOIN files f ON c.file_path = f.file_path
+                    WHERE c.chunk_id = ? AND c.current = 1
+                """, (chunk_id,))
+                
+                row = cursor.fetchone()
+                if row:
+                    content, file_path, chunk_index, chunk_id, file_name, doc_title, doc_id = row
+                    
+                    converted_results.append({
+                        "chunk_id": chunk_id,
+                        "text": content,
+                        "file": file_path,
+                        "file_path": file_path,
+                        "chunk_index": chunk_index,
+                        "similarity": lexical_score,  # Use lexical score as similarity
+                        "distance": 1.0 - lexical_score,  # Convert to distance
+                        "document_path": file_path,
+                        "document_title": doc_title or file_name,
+                        "document_id": doc_id,
+                        "unit": f"chunk_{chunk_index}",
+                        "search_type": "lexical"
+                    })
+            
+            conn.close()
+            
+        except Exception as e:
+            logger.error(f"Failed to convert lexical results: {e}")
+        
+        return converted_results
+    
+    def _merge_semantic_lexical_results(self, semantic_results: List[Dict[str, Any]], 
+                                      lexical_results: List[Dict[str, Any]], 
+                                      query_analysis: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Merge semantic and lexical search results using hybrid scoring.
+        
+        Args:
+            semantic_results: Results from semantic search
+            lexical_results: Results from lexical search
+            query_analysis: Query analysis for weighting decisions
+            
+        Returns:
+            Merged and deduplicated results sorted by hybrid score
+        """
+        # Convert to format expected by merge_search_results
+        semantic_tuples = [(r.get("chunk_id", ""), r.get("similarity", 0.0)) for r in semantic_results]
+        lexical_tuples = [(r.get("chunk_id", ""), r.get("similarity", 0.0)) for r in lexical_results]
+        
+        # Get weights from config
+        dense_weight = getattr(settings, 'hybrid_dense_weight', 0.6)
+        lexical_weight = getattr(settings, 'hybrid_lexical_weight', 0.4)
+        normalize_method = getattr(settings, 'hybrid_score_normalize', 'min-max')
+        
+        # Adjust weights based on query analysis
+        strategy = query_analysis.get("strategy", "hybrid")
+        if strategy == "lexical_primary":
+            dense_weight = 0.3
+            lexical_weight = 0.7
+        elif strategy == "semantic_primary":
+            dense_weight = 0.8
+            lexical_weight = 0.2
+        
+        # Merge scores
+        merged_scores = merge_search_results(
+            semantic_tuples, lexical_tuples,
+            dense_weight, lexical_weight, normalize_method
+        )
+        
+        # Create lookup maps for full result data
+        semantic_map = {r.get("chunk_id", ""): r for r in semantic_results}
+        lexical_map = {r.get("chunk_id", ""): r for r in lexical_results}
+        
+        # Build final merged results with full data
+        merged_results = []
+        for chunk_id, hybrid_score in merged_scores:
+            # Prefer semantic result format, fallback to lexical
+            if chunk_id in semantic_map:
+                result = semantic_map[chunk_id].copy()
+                result["hybrid_score"] = hybrid_score
+                result["similarity"] = hybrid_score  # Update similarity to hybrid score
+                result["distance"] = 1.0 - hybrid_score
+                if chunk_id in lexical_map:
+                    result["lexical_score"] = lexical_map[chunk_id].get("similarity", 0.0)
+                    result["search_type"] = "hybrid"
+                else:
+                    result["search_type"] = "semantic"
+            elif chunk_id in lexical_map:
+                result = lexical_map[chunk_id].copy()
+                result["hybrid_score"] = hybrid_score
+                result["similarity"] = hybrid_score
+                result["distance"] = 1.0 - hybrid_score
+                result["search_type"] = "lexical"
+            else:
+                continue  # Skip if chunk_id not found in either
+                
+            merged_results.append(result)
+        
+        if settings.enable_debug_logging:
+            logger.info(f"Hybrid merging: {len(semantic_results)} semantic + {len(lexical_results)} lexical = {len(merged_results)} merged")
+            logger.info(f"Weights used: dense={dense_weight}, lexical={lexical_weight}")
+        
+        return merged_results
     
     def _analyze_query(self, question: str) -> Dict[str, Any]:
         """Analyze query to detect entity/proper noun queries and other characteristics.
