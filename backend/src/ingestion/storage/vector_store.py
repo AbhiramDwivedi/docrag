@@ -64,7 +64,18 @@ class VectorStore:
 
     def _load_index(self):
         if self.index_path.exists():
+            # Load existing index and check compatibility
             self.index = faiss.read_index(str(self.index_path))
+            
+            # Check if we need to migrate from L2 to IP index
+            index_type = type(self.index).__name__
+            if index_type == 'IndexFlatL2':
+                print(f"Warning: Detected L2 index at {self.index_path}. "
+                      f"For cosine similarity, consider rebuilding with normalized embeddings and IP index.")
+                # Keep the L2 index but log the incompatibility
+                # In production, you might want to trigger a re-indexing process
+            elif index_type != 'IndexFlatIP':
+                print(f"Warning: Unexpected index type {index_type}. Expected IndexFlatIP for cosine similarity.")
         else:
             # Use IndexFlatIP for cosine similarity with normalized vectors
             # Inner product of normalized vectors equals cosine similarity

@@ -67,7 +67,8 @@ def mmr_selection(
             # MMR score: balance relevance and diversity
             mmr_score = mmr_lambda * relevance - (1 - mmr_lambda) * max_similarity
             
-            if mmr_score > best_score:
+            # Deterministic tie-breaking: prefer higher scores, then lower indices
+            if mmr_score > best_score or (mmr_score == best_score and (best_idx is None or idx < best_idx)):
                 best_score = mmr_score
                 best_idx = idx
         

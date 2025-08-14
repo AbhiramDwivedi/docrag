@@ -219,6 +219,69 @@ class TestRetrievalRobustness:
         assert boosted_results[0].get("metadata_boosted") == True
         assert boosted_results[0]["similarity"] > search_results[1]["similarity"]  # Should be boosted
     
+    def test_metadata_boosting_edge_cases(self):
+        """Test metadata boosting edge cases and error conditions."""
+        try:
+            from querying.agents.plugins.semantic_search import SemanticSearchPlugin
+            from shared.config import Settings
+        except ImportError:
+            from src.querying.agents.plugins.semantic_search import SemanticSearchPlugin
+            from src.shared.config import Settings
+        
+        plugin = SemanticSearchPlugin()
+        
+        # Test with empty entity list
+        search_results = [
+            {"id": "1", "text": "Content", "distance": 0.5, "similarity": 0.5,
+             "document_path": "/docs/test.pdf", "document_title": "Test", "file": "test.pdf"}
+        ]
+        
+        query_analysis = {"detected_entities": [], "likely_entity_query": False}
+        with patch('shared.config.settings.proper_noun_boost', 0.3):
+            result = plugin._apply_metadata_boosting(search_results, "general query", query_analysis)
+        
+        # Should not crash with empty entities
+        assert len(result) == 1
+        assert result[0].get("metadata_boosted", False) == False
+        
+        # Test with None entities
+        query_analysis = {"detected_entities": None, "likely_entity_query": False}
+        with patch('shared.config.settings.proper_noun_boost', 0.3):
+            result = plugin._apply_metadata_boosting(search_results, "general query", query_analysis)
+        
+        assert len(result) == 1
+        assert result[0].get("metadata_boosted", False) == False
+        
+        # Test with no matching entities
+        query_analysis = {"detected_entities": ["NonexistentEntity"], "likely_entity_query": True}
+        with patch('shared.config.settings.proper_noun_boost', 0.3):
+            result = plugin._apply_metadata_boosting(search_results, "query about something", query_analysis)
+        
+        # Should not boost any documents
+        assert len(result) == 1
+        assert result[0].get("metadata_boosted", False) == False
+        
+        # Test with zero boost value
+        query_analysis = {"detected_entities": ["Test"], "likely_entity_query": True}
+        with patch('shared.config.settings.proper_noun_boost', 0.0):
+            result = plugin._apply_metadata_boosting(search_results, "Test query", query_analysis)
+        
+        # Should not change similarity scores
+        assert result[0]["similarity"] == search_results[0]["similarity"]
+        
+        # Test case sensitivity in entity matching
+        search_results_case = [
+            {"id": "1", "text": "Content about tesla", "distance": 0.5, "similarity": 0.5,
+             "document_path": "/docs/tesla_info.pdf", "document_title": "tesla info", "file": "tesla_info.pdf"}
+        ]
+        
+        query_analysis = {"detected_entities": ["Tesla"], "likely_entity_query": True}
+        with patch('shared.config.settings.proper_noun_boost', 0.3):
+            result = plugin._apply_metadata_boosting(search_results_case, "Tesla query", query_analysis)
+        
+        # Should match case-insensitively
+        assert result[0].get("metadata_boosted") == True
+    
     def test_integration_no_regressions(self):
         """Test that improvements don't break basic functionality."""
         # Test that embedder still works with basic functionality

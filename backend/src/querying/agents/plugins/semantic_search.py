@@ -140,15 +140,58 @@ class SemanticSearchPlugin(Plugin):
                     logger.info(f"Top result similarity: {initial_results[0].get('similarity', 'N/A')}")
             
             if not initial_results:
-                return {
-                    "response": "No relevant information found.",
-                    "sources": [],
-                    "metadata": {
-                        "results_count": 0, 
-                        "stage": "initial_retrieval",
-                        "query_analysis": query_analysis
+                # Try with expanded retrieval as fallback
+                if settings.enable_debug_logging:
+                    logger.info("No results found, attempting expanded retrieval with higher k")
+                
+                # Try with double the k to catch more marginal matches
+                fallback_k = min(k * 2, 200)  # Cap at reasonable limit
+                initial_results = self._vector_store.query(q_vec, k=fallback_k)
+                
+                if not initial_results:
+                    return {
+                        "response": ("No relevant documents found in the knowledge base. "
+                                   "Try rephrasing your question or checking if documents have been properly ingested."),
+                        "sources": [],
+                        "metadata": {
+                            "results_count": 0, 
+                            "stage": "expanded_retrieval_failed",
+                            "fallback_k": fallback_k,
+                            "query_analysis": query_analysis
+                        }
                     }
-                }
+            
+            # Check for low-quality results - if all results have very low similarity, provide helpful response
+            if initial_results:
+                max_similarity = max(result.get('similarity', 0.0) for result in initial_results)
+                min_similarity_threshold = getattr(settings, 'min_similarity_threshold', 0.1)
+                
+                if max_similarity < min_similarity_threshold:
+                    if settings.enable_debug_logging:
+                        logger.info(f"Low quality results detected. Max similarity: {max_similarity:.3f} < threshold: {min_similarity_threshold}")
+                    
+                    return {
+                        "response": (
+                            f"Found documents but they don't seem highly relevant to your question. "
+                            f"The most similar document has a relevance score of {max_similarity:.2%}. "
+                            f"You might want to rephrase your question or try different keywords."
+                        ),
+                        "sources": [
+                            {
+                                "file": result.get("file", "unknown"),
+                                "similarity": result.get("similarity", 0.0),
+                                "preview": result.get("text", "")[:200] + "..." if len(result.get("text", "")) > 200 else result.get("text", "")
+                            }
+                            for result in initial_results[:3]  # Show top 3 low-quality matches
+                        ],
+                        "metadata": {
+                            "results_count": len(initial_results),
+                            "max_similarity": max_similarity,
+                            "threshold": min_similarity_threshold,
+                            "stage": "low_quality_results",
+                            "query_analysis": query_analysis
+                        }
+                    }
             
             # Stage 3: Optional Metadata Boosting
             if include_metadata_boost:
@@ -271,31 +314,111 @@ Answer:"""
             "question_words": []
         }
         
-        # Detect question patterns that suggest entity queries
+        # Common stop words to exclude from entity detection
+        stop_words = {"the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for", "of", "with", "by", "is", "are", "was", "were", "be", "been", "have", "has", "had", "do", "does", "did", "will", "would", "could", "should", "may", "might", "can", "about", "from", "up", "out", "if", "then", "than", "when", "where", "why", "how", "all", "any", "both", "each", "few", "more", "most", "other", "some", "such", "only", "own", "same", "so", "also", "just", "very", "what", "who", "tell", "find", "show", "locate", "give", "get", "make", "take", "come", "go", "see", "know", "think", "say", "use", "work", "call", "try", "ask", "need", "feel", "become", "leave", "put", "mean", "keep", "let", "begin", "seem", "help", "talk", "turn", "start", "might", "move", "live", "believe", "hold", "bring", "happen", "write", "provide", "sit", "stand", "lose", "pay", "meet", "include", "continue", "set", "learn", "change", "lead", "understand", "watch", "follow", "stop", "create", "speak", "read", "allow", "add", "spend", "grow", "open", "walk", "win", "offer", "remember", "love", "consider", "appear", "buy", "wait", "serve", "die", "send", "expect", "build", "stay", "fall", "cut", "reach", "kill", "remain"}
+        
+        # Enhanced entity patterns for better multi-word detection
         entity_patterns = [
-            r"what is (\w+)",
-            r"who is (\w+)",
-            r"tell me about (\w+)",
-            r"find (\w+)",
-            r"show me (\w+)",
-            r"locate (\w+)",
-            r"information about (\w+)"
+            r"what is ([A-Z][\w\s\-\.]{1,30}?)(?:\s+(?:and|or|\?|$))",  # "what is Tesla Motors"
+            r"who is ([A-Z][\w\s\-\.]{1,30}?)(?:\s+(?:and|or|\?|$))",   # "who is J.K. Rowling"
+            r"tell me about ([A-Z][\w\s\-\.]{1,30}?)(?:\s+(?:and|or|\?|$))", # "tell me about New York City"
+            r"find (?:information about |documents about |)?([A-Z][\w\s\-\.]{1,30}?)(?:\s+(?:and|or|\?|$))", # "find Tesla" or "find documents about COVID-19"
+            r"show me (?:information about |documents about |)?([A-Z][\w\s\-\.]{1,30}?)(?:\s+(?:and|or|\?|$))",
+            r"locate (?:information about |documents about |)?([A-Z][\w\s\-\.]{1,30}?)(?:\s+(?:and|or|\?|$))",
+            r"information about ([A-Z][\w\s\-\.]{1,30}?)(?:\s+(?:and|or|\?|$))"
         ]
         
-        question_lower = question.lower()
+        # First pass: Extract entities using enhanced patterns
         for pattern in entity_patterns:
-            matches = re.findall(pattern, question_lower)
-            if matches:
-                analysis["likely_entity_query"] = True
-                analysis["detected_entities"].extend(matches)
-                analysis["query_type"] = "entity_lookup"
+            matches = re.findall(pattern, question, re.IGNORECASE)
+            for match in matches:
+                # Clean up the match and normalize
+                entity = match.strip()
+                entity = re.sub(r'\s+', ' ', entity)  # Normalize whitespace
+                if entity and len(entity) > 1:  # Avoid single characters
+                    analysis["likely_entity_query"] = True
+                    analysis["detected_entities"].append(entity)
+                    analysis["query_type"] = "entity_lookup"
         
-        # Detect proper nouns (capitalized words that aren't at sentence start)
+        # Second pass: Detect proper noun phrases (consecutive capitalized words)
         words = question.split()
+        current_phrase = []
+        
         for i, word in enumerate(words):
-            if i > 0 and word[0].isupper() and word.isalpha():
-                analysis["detected_entities"].append(word)
+            # Clean word of punctuation for analysis
+            clean_word = re.sub(r'[^\w\-]', '', word)
+            
+            # Check if this could be part of a proper noun phrase
+            if (clean_word and 
+                clean_word[0].isupper() and 
+                clean_word.lower() not in stop_words and
+                len(clean_word) > 1):  # Avoid single letters unless they're known patterns
+                
+                # Handle special cases like "J.K." or "U.S."
+                if re.match(r'^[A-Z]\.([A-Z]\.?)*$', word):  # Initials like "J.K."
+                    current_phrase.append(word)
+                elif clean_word.isalpha() or '-' in clean_word:  # Regular words or hyphenated
+                    current_phrase.append(clean_word)
+                else:
+                    # End current phrase if we hit something that doesn't fit
+                    if len(current_phrase) >= 1:
+                        entity = ' '.join(current_phrase)
+                        if entity not in analysis["detected_entities"]:
+                            analysis["detected_entities"].append(entity)
+                            analysis["likely_entity_query"] = True
+                    current_phrase = []
+            else:
+                # End current phrase
+                if len(current_phrase) >= 1:
+                    entity = ' '.join(current_phrase)
+                    if entity not in analysis["detected_entities"]:
+                        analysis["detected_entities"].append(entity)
+                        analysis["likely_entity_query"] = True
+                current_phrase = []
+        
+        # Handle phrase at end of sentence
+        if len(current_phrase) >= 1:
+            entity = ' '.join(current_phrase)
+            if entity not in analysis["detected_entities"]:
+                analysis["detected_entities"].append(entity)
                 analysis["likely_entity_query"] = True
+        
+        # Third pass: Detect common entity patterns (acronyms, product names, etc.)
+        # Look for ALL CAPS words (likely acronyms) that aren't stop words
+        for word in words:
+            clean_word = re.sub(r'[^\w]', '', word)
+            if (clean_word.isupper() and 
+                len(clean_word) >= 2 and 
+                clean_word.lower() not in stop_words and
+                clean_word not in analysis["detected_entities"]):
+                analysis["detected_entities"].append(clean_word)
+                analysis["likely_entity_query"] = True
+        
+        # Fourth pass: Detect hyphenated or special format entities
+        special_entity_patterns = [
+            r'\b[A-Z][\w]*-\d+\b',  # COVID-19, iPhone-15, etc.
+            r'\b[A-Z]+/[A-Z]+\b',   # AI/ML, US/UK, etc.
+            r'\b\w+\s+\d+(?:\s+\w+)*\b'  # iPhone 15 Pro Max, Windows 11, etc.
+        ]
+        
+        for pattern in special_entity_patterns:
+            matches = re.findall(pattern, question)
+            for match in matches:
+                if match not in analysis["detected_entities"]:
+                    analysis["detected_entities"].append(match)
+                    analysis["likely_entity_query"] = True
+        
+        # Clean up detected entities - remove duplicates and very short ones
+        unique_entities = []
+        for entity in analysis["detected_entities"]:
+            entity = entity.strip()
+            if (entity and 
+                len(entity) > 1 and 
+                entity.lower() not in stop_words and
+                entity not in unique_entities):
+                unique_entities.append(entity)
+        
+        analysis["detected_entities"] = unique_entities
         
         # Detect question words
         question_words = ["what", "who", "where", "when", "why", "how", "which"]
