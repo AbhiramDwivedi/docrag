@@ -712,34 +712,24 @@ class TestAcceptanceCriteria:
         # Test that backup functionality is built into the migration
         # This is a design test - we verify the migration script has backup logic
         
-        import importlib.util
-        spec = importlib.util.spec_from_file_location(
-            "migrate_embeddings", 
-            Path(__file__).parent.parent / "scripts" / "migrate_embeddings.py"
-        )
+        # Read the migration script source code to verify design patterns
+        source_code = Path(__file__).parent.parent / "scripts" / "migrate_embeddings.py"
+        content = source_code.read_text()
         
-        if spec and spec.loader:
-            module = importlib.util.module_from_spec(spec)
-            
-            # Check that key methods exist for safe migration
-            assert hasattr(module, 'EmbeddingMigrator'), "Migration class should exist"
-            
-            # The module should define backup and progress tracking methods
-            # This ensures the migration is designed with safety in mind
-            source_code = Path(__file__).parent.parent / "scripts" / "migrate_embeddings.py"
-            content = source_code.read_text()
-            
-            # Check for safety features in the code
-            assert "create_backup" in content, "Migration should create backups"
-            assert "progress" in content, "Migration should track progress"
-            assert "resume" in content, "Migration should support resuming"
-            assert "batch" in content, "Migration should process in batches"
-            
-            # Verify backup verification exists
-            assert "backup verification" in content.lower() or "verify" in content, "Should verify backup success"
-            
-            # Verify transaction safety
-            assert "TRANSACTION" in content or "transaction" in content, "Should use database transactions"
+        # Check that key classes exist for safe migration
+        assert "class EmbeddingMigrator" in content, "Migration class should exist"
+        
+        # Check for safety features in the code
+        assert "create_backup" in content, "Migration should create backups"
+        assert "progress" in content, "Migration should track progress"
+        assert "resume" in content, "Migration should support resuming"
+        assert "batch" in content, "Migration should process in batches"
+        
+        # Verify backup verification exists
+        assert "backup verification" in content.lower() or "verify" in content, "Should verify backup success"
+        
+        # Verify transaction safety
+        assert "TRANSACTION" in content or "transaction" in content, "Should use database transactions"
 
 
 if __name__ == "__main__":
