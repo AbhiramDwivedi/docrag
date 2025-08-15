@@ -107,7 +107,7 @@ class EmbeddingMigrator:
             # Verify backup info was written successfully
             if not backup_info_path.exists():
                 raise RuntimeError(f"Backup info file creation failed: {backup_info_path}")
-        except (OSError, json.JSONEncodeError) as e:
+        except (OSError, ValueError) as e:
             raise RuntimeError(f"Failed to save backup info: {e}")
             
     def load_progress(self) -> Dict:
@@ -126,7 +126,7 @@ class EmbeddingMigrator:
                         progress[key] = self._get_default_progress_value(key)
                         
                 return progress
-        except (json.JSONDecodeError, OSError) as e:
+        except (ValueError, OSError) as e:
             self.logger.error(f"Failed to load progress file: {e}. Starting fresh migration.")
             # Remove corrupted progress file
             if self.progress_file.exists():
@@ -142,7 +142,7 @@ class EmbeddingMigrator:
         defaults = {
             "total_chunks": 0,
             "processed_chunks": 0,
-            "last_chunk_id": 0,
+            "last_chunk_id": "",  # String ID, not int
             "target_model": self.target_model,
             "target_version": self.target_version,
             "started_at": None,
@@ -155,7 +155,7 @@ class EmbeddingMigrator:
         return {
             "total_chunks": 0,
             "processed_chunks": 0,
-            "last_chunk_id": 0,
+            "last_chunk_id": "",  # String ID, not int
             "target_model": self.target_model,
             "target_version": self.target_version,
             "started_at": None,
@@ -177,14 +177,16 @@ class EmbeddingMigrator:
             if not temp_file.exists() or temp_file.stat().st_size == 0:
                 raise RuntimeError("Progress file write verification failed")
                 
-            # Atomic rename
+            # Atomic rename (Windows-compatible)
+            if self.progress_file.exists():
+                self.progress_file.unlink()  # Remove existing file on Windows
             temp_file.rename(self.progress_file)
             
-        except (OSError, json.JSONEncodeError) as e:
+        except (OSError, ValueError) as e:
             self.logger.error(f"Failed to save progress: {e}")
             raise RuntimeError(f"Progress save failed: {e}")
     
-    def get_chunk_data(self, start_id: int = 0) -> List[Tuple[int, str]]:
+    def get_chunk_data(self, start_id: str = "") -> List[Tuple[str, str]]:
         """Get chunk text data from database starting from given ID."""
         if not self.db_path.exists():
             rprint("[red]Database not found. Nothing to migrate.[/red]")
@@ -193,10 +195,11 @@ class EmbeddingMigrator:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
-        # Get chunks with text content
+        # Get chunks with text content (actual schema uses 'text' column, not 'content')
+        # Note: String-based IDs, so we use lexicographic ordering
         cursor.execute("""
-            SELECT id, content FROM chunks 
-            WHERE id > ? AND content IS NOT NULL 
+            SELECT id, text FROM chunks 
+            WHERE id > ? AND text IS NOT NULL 
             ORDER BY id
         """, (start_id,))
         
@@ -212,7 +215,7 @@ class EmbeddingMigrator:
             
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM chunks WHERE content IS NOT NULL")
+        cursor.execute("SELECT COUNT(*) FROM chunks WHERE text IS NOT NULL")
         count = cursor.fetchone()[0]
         conn.close()
         
@@ -233,7 +236,7 @@ class EmbeddingMigrator:
             progress = {
                 "total_chunks": total_chunks,
                 "processed_chunks": 0,
-                "last_chunk_id": 0,
+                "last_chunk_id": "",  # String ID, not int
                 "target_model": self.target_model,
                 "target_version": self.target_version,
                 "started_at": time.time(),
@@ -301,7 +304,8 @@ class EmbeddingMigrator:
                     
                     # Update progress
                     progress["processed_chunks"] += len(batch)
-                    progress["last_chunk_id"] = max(chunk_ids)
+                    if chunk_ids:  # Only update if we have chunk IDs
+                        progress["last_chunk_id"] = chunk_ids[-1]  # Last chunk ID in this batch
                     self.save_progress(progress)
                     
                     progress_bar.update(task, completed=progress["processed_chunks"])
@@ -333,7 +337,7 @@ class EmbeddingMigrator:
         
         return True
     
-    def update_chunk_mappings(self, chunk_id_to_index: Dict[int, int]) -> None:
+    def update_chunk_mappings(self, chunk_id_to_index: Dict[str, int]) -> None:
         """Update database with new chunk-to-vector mappings."""
         try:
             conn = sqlite3.connect(self.db_path)
@@ -345,11 +349,11 @@ class EmbeddingMigrator:
             try:
                 for chunk_id, vector_idx in chunk_id_to_index.items():
                     cursor.execute("""
-                        UPDATE chunks SET vector_index = ? WHERE id = ?
+                        UPDATE chunks SET faiss_idx = ? WHERE id = ?
                     """, (vector_idx, chunk_id))
                 
                 # Verify updates were applied
-                cursor.execute("SELECT COUNT(*) FROM chunks WHERE vector_index IS NOT NULL")
+                cursor.execute("SELECT COUNT(*) FROM chunks WHERE faiss_idx IS NOT NULL")
                 updated_count = cursor.fetchone()[0]
                 
                 if updated_count == 0:
