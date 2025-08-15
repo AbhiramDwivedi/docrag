@@ -21,6 +21,7 @@
 - Use project logging (`shared.logging_config`) and structured logs for new features.
 - All configuration must be read via `shared.config.Config` or config files; never hardcode paths or credentials.
 - Storage/data paths must be configurable and default outside the repo.
+- **Never use Unicode emojis in code, comments, or output strings** - use plain text or Rich markup for cross-platform compatibility.
 - When adding retrieval features:
   - Use cosine similarity with normalized vectors by default.
   - Implement hybrid/lexical retrieval as a separate plugin (FTS5), not in metadata plugin.
@@ -33,6 +34,7 @@
 - No network access in tests.
 - Validate and update CI (GitHub Actions) with every change: ensure all tests pass in CI, not just locally.
 - If adding new config, update `config.yaml.template` and document usage.
+- Ensure all code works cross-platform (Windows, Linux, macOS) - avoid Unicode emojis or platform-specific features.
 
 ## Security & Privacy
 - Never commit secrets or credentials. Use environment variables for sensitive data.

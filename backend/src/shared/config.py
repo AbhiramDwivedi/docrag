@@ -1,7 +1,7 @@
 """Central configuration loader."""
 from pathlib import Path
 import yaml
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, ValidationInfo
 import os
 from typing import Dict, Any, Optional
 
@@ -15,8 +15,62 @@ class Settings(BaseModel):
     chunk_size: int = 800
     overlap: int = 150
     embed_model: str = "sentence-transformers/all-MiniLM-L6-v2"
+    embed_model_version: str = Field(default="1.0.0", description="Version identifier for embedding model compatibility")
     batch_size: int = 32
     openai_api_key: Optional[str] = None
+    
+    @field_validator('embed_model_version')
+    @classmethod
+    def validate_model_version_consistency(cls, v: str, info: ValidationInfo) -> str:
+        """Validate that model version is consistent with model name."""
+        # Validate version format (basic semantic versioning check)
+        import re
+        if not re.match(r'^\d+\.\d+\.\d+$', v):
+            raise ValueError(f"Model version '{v}' must follow semantic versioning format (x.y.z)")
+        
+        # Only validate consistency if embed_model is also being set
+        if 'embed_model' in info.data:
+            model_name = info.data['embed_model']
+            
+            # Validate model_name is not empty
+            if not model_name or not isinstance(model_name, str):
+                raise ValueError("embed_model must be a non-empty string")
+            
+            # Define version mappings for known models
+            known_model_versions = {
+                "sentence-transformers/all-MiniLM-L6-v2": ["1.0.0"],
+                "intfloat/e5-base-v2": ["2.0.0"],
+                "intfloat/e5-small-v2": ["2.0.0"],
+                "intfloat/e5-large-v2": ["2.0.0"],
+                "BAAI/bge-small-en-v1.5": ["2.0.0"],
+                "BAAI/bge-base-en-v1.5": ["2.0.0"],
+                "BAAI/bge-large-en-v1.5": ["2.0.0"],
+                "thenlper/gte-base": ["2.0.0"],
+                "thenlper/gte-small": ["2.0.0"],
+                "thenlper/gte-large": ["2.0.0"]
+            }
+            
+            if model_name in known_model_versions:
+                expected_versions = known_model_versions[model_name]
+                if v not in expected_versions:
+                    # Allow version override with warning, don't fail
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(
+                        f"Model version '{v}' may not be compatible with model '{model_name}'. "
+                        f"Expected versions: {expected_versions}. "
+                        f"This may cause compatibility issues with embeddings and migration."
+                    )
+            else:
+                # Unknown model - issue info warning
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.info(
+                    f"Unknown embedding model '{model_name}' with version '{v}'. "
+                    f"Ensure compatibility manually."
+                )
+        
+        return v
     
     # Phase 1: Retrieval robustness parameters
     retrieval_k: int = Field(default=100, ge=1, description="Number of initial chunks to retrieve before MMR")
@@ -25,11 +79,10 @@ class Settings(BaseModel):
     proper_noun_boost: float = Field(default=0.3, ge=0.0, le=1.0, description="Boost factor for metadata matches on proper noun queries")
     min_similarity_threshold: float = Field(default=0.1, ge=0.0, le=1.0, description="Minimum similarity threshold for considering results relevant")
     enable_debug_logging: bool = Field(default=False, description="Enable detailed debug logging for retrieval pipeline")
-    enable_debug_logging: bool = Field(default=False, description="Enable detailed debug logging for retrieval pipeline")
 
     @field_validator('mmr_k')
     @classmethod
-    def validate_mmr_k_vs_retrieval_k(cls, v, info):
+    def validate_mmr_k_vs_retrieval_k(cls, v: int, info: ValidationInfo) -> int:
         """Ensure mmr_k <= retrieval_k."""
         if 'retrieval_k' in info.data and v > info.data['retrieval_k']:
             raise ValueError(f"mmr_k ({v}) cannot be greater than retrieval_k ({info.data['retrieval_k']})")
@@ -88,7 +141,7 @@ def get_settings() -> Settings:
 
 # For backward compatibility - create a proxy object that behaves like the settings
 class SettingsProxy:
-    def __getattr__(self, name):
+    def __getattr__(self, name: str) -> Any:
         return getattr(get_settings(), name)
 
 settings = SettingsProxy()
