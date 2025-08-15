@@ -31,3 +31,12 @@ hybrid_dense_weight: 0.6      # Weight for semantic search results in hybrid mod
 hybrid_lexical_weight: 0.4    # Weight for lexical search results in hybrid mode
 hybrid_score_normalize: "min-max"  # Score normalization method: "min-max" or "z-score"
 enable_query_classification: true  # Enable automatic query intent classification
+
+# Phase 4: Advanced features for improved precision and entity-awareness
+enable_cross_encoder_reranking: false  # Enable cross-encoder reranking (requires additional dependencies)
+cross_encoder_model: "ms-marco-MiniLM-L-6-v2"  # Cross-encoder model for reranking
+cross_encoder_top_k: 20               # Number of results to keep after cross-encoder reranking
+enable_query_expansion: false         # Enable query expansion for entity queries
+query_expansion_method: "synonyms"    # Query expansion method: 'synonyms', 'related_terms'
+enable_entity_indexing: false         # Enable entity-aware indexing during ingestion (requires spaCy)
+entity_boost_factor: 0.2              # Boost factor for entity-document mappings

@@ -22,6 +22,7 @@ try:
     from shared.config import settings
     from shared.mmr import mmr_selection, extract_embeddings_from_results
     from shared.hybrid_search import merge_search_results, classify_query_intent
+    from shared.reranking import CrossEncoderReranker, expand_entity_query
 except ImportError:
     # Fallback to absolute imports
     try:
@@ -30,6 +31,7 @@ except ImportError:
         from src.shared.config import settings
         from src.shared.mmr import mmr_selection, extract_embeddings_from_results
         from src.shared.hybrid_search import merge_search_results, classify_query_intent
+        from src.shared.reranking import CrossEncoderReranker, expand_entity_query
     except ImportError:
         # Last resort - relative imports from backend root
         import os
@@ -40,6 +42,7 @@ except ImportError:
         from src.shared.config import settings
         from src.shared.mmr import mmr_selection, extract_embeddings_from_results
         from src.shared.hybrid_search import merge_search_results, classify_query_intent
+        from src.shared.reranking import CrossEncoderReranker, expand_entity_query
 
 from openai import OpenAI
 
@@ -62,17 +65,20 @@ class SemanticSearchPlugin(Plugin):
         self._vector_store = None
         self._openai_client = None
         self._lexical_plugin = None
+        self._cross_encoder = None
     
     def execute(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute enhanced semantic search with hybrid search support.
+        """Execute enhanced semantic search with Phase 4 advanced features.
         
-        Implements multi-stage search process with optional hybrid lexical search:
+        Implements multi-stage search process with optional advanced features:
         1. Query Analysis - Detect entity/proper noun queries and classify intent
-        2. Strategy Selection - Choose semantic-only, lexical-only, or hybrid approach
-        3. Search Execution - Run appropriate search strategy
-        4. Result Merging - Combine and deduplicate results if hybrid
-        5. MMR Selection - Select diverse relevant chunks
-        6. Response Generation - Synthesize answer with attribution
+        2. Query Expansion - Expand entity queries with variants (Phase 4)
+        3. Strategy Selection - Choose semantic-only, lexical-only, or hybrid approach
+        4. Search Execution - Run appropriate search strategy
+        5. Cross-encoder Reranking - Rerank results for better precision (Phase 4)
+        6. Result Merging - Combine and deduplicate results if hybrid
+        7. MMR Selection - Select diverse relevant chunks
+        8. Response Generation - Synthesize answer with attribution
         
         Args:
             params: Dictionary containing:
@@ -84,6 +90,8 @@ class SemanticSearchPlugin(Plugin):
                 - include_metadata_boost: Include metadata/filename boosting (default: auto-detect)
                 - force_semantic_only: Force semantic search only (default: False)
                 - force_hybrid: Force hybrid search (default: False)
+                - enable_cross_encoder: Override config for cross-encoder reranking (Phase 4)
+                - enable_query_expansion: Override config for query expansion (Phase 4)
                 
         Returns:
             Dictionary containing:
@@ -99,6 +107,10 @@ class SemanticSearchPlugin(Plugin):
         include_metadata_boost = params.get("include_metadata_boost", None)  # Auto-detect if None
         force_semantic_only = params.get("force_semantic_only", False)
         force_hybrid = params.get("force_hybrid", False)
+        
+        # Phase 4: Advanced features
+        enable_cross_encoder = params.get("enable_cross_encoder", getattr(settings, 'enable_cross_encoder_reranking', False))
+        enable_query_expansion = params.get("enable_query_expansion", getattr(settings, 'enable_query_expansion', False))
         
         if not question.strip():
             return {
@@ -155,11 +167,39 @@ class SemanticSearchPlugin(Plugin):
                     Path(settings.db_path)
                 )
             
-            # Stage 2: Execute search strategy
-            if use_hybrid:
-                initial_results = self._execute_hybrid_search(question, k, query_analysis)
+            # Get query embedding for MMR (using original question, not expanded variants)
+            q_vec = embed_texts([question], settings.embed_model)[0]
+            
+            # Phase 4: Query expansion for entity queries
+            queries_to_search = [question]
+            if enable_query_expansion and query_analysis.get("likely_entity_query", False):
+                expanded_queries = expand_entity_query(question, query_analysis.get("detected_entities", []))
+                queries_to_search = expanded_queries
+                if settings.enable_debug_logging:
+                    logger.info(f"Query expansion enabled: {len(queries_to_search)} variants")
+            
+            # Stage 2: Execute search strategy (with optional expansion)
+            all_results = []
+            for search_query in queries_to_search:
+                if use_hybrid:
+                    query_results = self._execute_hybrid_search(search_query, k, query_analysis)
+                else:
+                    query_results = self._execute_semantic_search(search_query, k, query_analysis)
+                
+                # Mark results with query variant info
+                for result in query_results:
+                    result['search_query'] = search_query
+                    result['is_expanded_query'] = search_query != question
+                
+                all_results.extend(query_results)
+            
+            # Deduplicate results by chunk_id while preserving best scores
+            if len(queries_to_search) > 1:
+                initial_results = self._deduplicate_results(all_results)
+                if settings.enable_debug_logging:
+                    logger.info(f"After deduplication: {len(all_results)} -> {len(initial_results)} results")
             else:
-                initial_results = self._execute_semantic_search(question, k, query_analysis)
+                initial_results = all_results
             
             if not initial_results:
                 return {
@@ -174,6 +214,23 @@ class SemanticSearchPlugin(Plugin):
                     }
                 }
             
+            # Phase 4: Cross-encoder reranking for improved precision
+            if enable_cross_encoder and initial_results:
+                if self._cross_encoder is None:
+                    cross_encoder_model = getattr(settings, 'cross_encoder_model', 'ms-marco-MiniLM-L-6-v2')
+                    self._cross_encoder = CrossEncoderReranker(cross_encoder_model)
+                
+                if self._cross_encoder.is_available():
+                    cross_encoder_top_k = getattr(settings, 'cross_encoder_top_k', 20)
+                    # Limit reranking to reasonable number to avoid performance issues
+                    rerank_input = initial_results[:100]  # Top 100 for reranking
+                    initial_results = self._cross_encoder.rerank(question, rerank_input, cross_encoder_top_k)
+                    
+                    if settings.enable_debug_logging:
+                        logger.info(f"Cross-encoder reranking: {len(rerank_input)} -> {len(initial_results)} results")
+                else:
+                    if settings.enable_debug_logging:
+                        logger.info("Cross-encoder reranking requested but not available")
             
             # Check for low-quality results - if all results have very low similarity, provide helpful response
             if initial_results:
@@ -296,7 +353,17 @@ Answer:"""
                 "model_used": "gpt-4o-mini",
                 "embedding_model": settings.embed_model,
                 "context_length": len(enhanced_context),
-                "retrieval_k": k
+                "retrieval_k": k,
+                # Phase 4 metadata
+                "cross_encoder_enabled": enable_cross_encoder,
+                "cross_encoder_available": self._cross_encoder.is_available() if self._cross_encoder else False,
+                "query_expansion_enabled": enable_query_expansion,
+                "expanded_queries_count": len(queries_to_search),
+                "phase4_features": {
+                    "cross_encoder_reranking": enable_cross_encoder,
+                    "query_expansion": enable_query_expansion and query_analysis.get("likely_entity_query", False),
+                    "entity_indexing": getattr(settings, 'enable_entity_indexing', False)
+                }
             }
             
             return {
@@ -771,8 +838,8 @@ Answer:"""
         """Return plugin metadata and capabilities."""
         return PluginInfo(
             name="semantic_search",
-            description="Enhanced semantic document search with cosine similarity, MMR selection, and entity query robustness",
-            version="2.1.0",
+            description="Enhanced semantic document search with Phase 4 advanced features: cross-encoder reranking, query expansion, and entity-aware indexing",
+            version="2.2.0",
             capabilities=[
                 "semantic_search",
                 "document_query",
@@ -785,7 +852,12 @@ Answer:"""
                 "cosine_similarity",
                 "diverse_retrieval",
                 "query_analysis",
-                "structured_logging"
+                "structured_logging",
+                # Phase 4 capabilities
+                "cross_encoder_reranking",
+                "query_expansion",
+                "entity_indexing",
+                "precision_optimization"
             ],
             parameters={
                 "question": "str - The question to search for",
@@ -793,7 +865,12 @@ Answer:"""
                 "mmr_lambda": "float - MMR balance: 1.0=pure relevance, 0.0=pure diversity (default: from config)",
                 "mmr_k": "int - Final number of chunks after MMR selection (default: from config)",
                 "enable_mmr": "bool - Whether to use MMR selection (default: True)",
-                "include_metadata_boost": "bool - Include metadata/filename boosting (default: auto-detect)"
+                "include_metadata_boost": "bool - Include metadata/filename boosting (default: auto-detect)",
+                "force_semantic_only": "bool - Force semantic search only (default: False)",
+                "force_hybrid": "bool - Force hybrid search (default: False)",
+                # Phase 4 parameters
+                "enable_cross_encoder": "bool - Override config for cross-encoder reranking (default: from config)",
+                "enable_query_expansion": "bool - Override config for query expansion (default: from config)"
             }
         )
     
@@ -829,10 +906,39 @@ Answer:"""
         
         return True
     
+    def _deduplicate_results(self, results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Deduplicate search results by chunk_id, keeping the best score for each.
+        
+        Args:
+            results: List of search results potentially containing duplicates
+            
+        Returns:
+            Deduplicated list of results sorted by similarity
+        """
+        chunk_map = {}
+        
+        for result in results:
+            chunk_id = result.get('chunk_id', '')
+            if not chunk_id:
+                continue  # Skip results without chunk_id
+            
+            similarity = result.get('similarity', 0.0)
+            
+            if chunk_id not in chunk_map or similarity > chunk_map[chunk_id].get('similarity', 0.0):
+                # Keep this result if it's the first or has better similarity
+                chunk_map[chunk_id] = result
+        
+        # Convert back to list and sort by similarity
+        deduplicated = list(chunk_map.values())
+        deduplicated.sort(key=lambda x: x.get('similarity', 0.0), reverse=True)
+        
+        return deduplicated
+    
     def cleanup(self) -> None:
         """Cleanup plugin resources."""
         # Vector store and OpenAI client don't need explicit cleanup
         # They will be garbage collected
         self._vector_store = None
         self._openai_client = None
+        self._cross_encoder = None
         logger.info("Semantic search plugin cleaned up")

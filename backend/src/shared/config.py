@@ -80,12 +80,29 @@ class Settings(BaseModel):
     min_similarity_threshold: float = Field(default=0.1, ge=0.0, le=1.0, description="Minimum similarity threshold for considering results relevant")
     enable_debug_logging: bool = Field(default=False, description="Enable detailed debug logging for retrieval pipeline")
 
+    # Phase 4: Advanced features
+    enable_cross_encoder_reranking: bool = Field(default=False, description="Enable cross-encoder reranking for improved precision")
+    cross_encoder_model: str = Field(default="ms-marco-MiniLM-L-6-v2", description="Cross-encoder model for reranking")
+    cross_encoder_top_k: int = Field(default=20, ge=1, description="Number of results to keep after cross-encoder reranking")
+    enable_query_expansion: bool = Field(default=False, description="Enable query expansion for entity queries")
+    query_expansion_method: str = Field(default="synonyms", description="Query expansion method: 'synonyms', 'related_terms'")
+    enable_entity_indexing: bool = Field(default=False, description="Enable entity-aware indexing during ingestion")
+    entity_boost_factor: float = Field(default=0.2, ge=0.0, le=1.0, description="Boost factor for entity-document mappings")
+
     @field_validator('mmr_k')
     @classmethod
     def validate_mmr_k_vs_retrieval_k(cls, v: int, info: ValidationInfo) -> int:
         """Ensure mmr_k <= retrieval_k."""
         if 'retrieval_k' in info.data and v > info.data['retrieval_k']:
             raise ValueError(f"mmr_k ({v}) cannot be greater than retrieval_k ({info.data['retrieval_k']})")
+        return v
+
+    @field_validator('cross_encoder_top_k')
+    @classmethod
+    def validate_cross_encoder_top_k(cls, v: int, info: ValidationInfo) -> int:
+        """Ensure cross_encoder_top_k is reasonable."""
+        if 'retrieval_k' in info.data and v > info.data['retrieval_k']:
+            raise ValueError(f"cross_encoder_top_k ({v}) cannot be greater than retrieval_k ({info.data['retrieval_k']})")
         return v
 
     @field_validator('sync_root', mode='before')
