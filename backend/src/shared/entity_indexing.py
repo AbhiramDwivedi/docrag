@@ -67,6 +67,43 @@ class EntityExtractor:
         
         return self._nlp
     
+    def _validate_input_text(self, text: str) -> bool:
+        """Validate input text for security concerns.
+        
+        Args:
+            text: Input text to validate
+            
+        Returns:
+            True if text is safe to process, False otherwise
+        """
+        if not isinstance(text, str):
+            return False
+        
+        # Check for reasonable length (prevent DoS)
+        if len(text) > 50000:  # 50KB limit
+            logger.warning(f"Input text too long: {len(text)} characters")
+            return False
+        
+        # Check for null bytes and other control characters
+        if '\x00' in text or any(ord(c) < 32 and c not in '\t\n\r' for c in text):
+            logger.warning("Input text contains null bytes or control characters")
+            return False
+        
+        # Check for potential script injection patterns
+        suspicious_patterns = ['<script', 'javascript:', 'data:', 'vbscript:']
+        text_lower = text.lower()
+        if any(pattern in text_lower for pattern in suspicious_patterns):
+            logger.warning("Input text contains suspicious script patterns")
+            return False
+        
+        # Check for SQL injection patterns  
+        sql_patterns = ['drop table', 'delete from', 'insert into', 'update set', '--', '/*']
+        if any(pattern in text_lower for pattern in sql_patterns):
+            logger.warning("Input text contains suspicious SQL patterns")
+            return False
+        
+        return True
+    
     def extract_entities(self, text: str) -> List[Dict[str, Any]]:
         """Extract named entities from text.
         
@@ -77,6 +114,11 @@ class EntityExtractor:
             List of entity dictionaries with text, label, start, end positions
         """
         if not self._available:
+            return []
+        
+        # Security validation for input text
+        if not self._validate_input_text(text):
+            logger.warning("Invalid or potentially malicious input detected, skipping entity extraction")
             return []
         
         nlp = self._load_model()

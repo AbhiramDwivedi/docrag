@@ -219,22 +219,39 @@ class SemanticSearchPlugin(Plugin):
                 }
             
             # Phase 4: Cross-encoder reranking for improved precision
+            cross_encoder_success = False
             if enable_cross_encoder and initial_results:
-                if self._cross_encoder is None:
-                    cross_encoder_model = getattr(settings, 'cross_encoder_model', 'ms-marco-MiniLM-L-6-v2')
-                    self._cross_encoder = CrossEncoderReranker(cross_encoder_model)
-                
-                if self._cross_encoder.is_available():
-                    cross_encoder_top_k = getattr(settings, 'cross_encoder_top_k', 20)
-                    # Limit reranking to reasonable number to avoid performance issues
-                    rerank_input = initial_results[:100]  # Top 100 for reranking
-                    initial_results = self._cross_encoder.rerank(question, rerank_input, cross_encoder_top_k)
+                try:
+                    if self._cross_encoder is None:
+                        cross_encoder_model = getattr(settings, 'cross_encoder_model', 'ms-marco-MiniLM-L-6-v2')
+                        self._cross_encoder = CrossEncoderReranker(cross_encoder_model)
                     
-                    if settings.enable_debug_logging:
-                        logger.info(f"Cross-encoder reranking: {len(rerank_input)} -> {len(initial_results)} results")
-                else:
-                    if settings.enable_debug_logging:
-                        logger.info("Cross-encoder reranking requested but not available")
+                    if self._cross_encoder.is_available():
+                        cross_encoder_top_k = getattr(settings, 'cross_encoder_top_k', 20)
+                        # Limit reranking to reasonable number to avoid performance issues
+                        rerank_input = initial_results[:100]  # Top 100 for reranking
+                        reranked_results = self._cross_encoder.rerank(question, rerank_input, cross_encoder_top_k)
+                        
+                        # Validate reranking results before using them
+                        if reranked_results and len(reranked_results) > 0:
+                            initial_results = reranked_results
+                            cross_encoder_success = True
+                            if settings.enable_debug_logging:
+                                logger.info(f"Cross-encoder reranking successful: {len(rerank_input)} -> {len(initial_results)} results")
+                        else:
+                            if settings.enable_debug_logging:
+                                logger.warning("Cross-encoder reranking returned empty results, using original results")
+                    else:
+                        if settings.enable_debug_logging:
+                            logger.info("Cross-encoder reranking requested but model not available, using original results")
+                            
+                except Exception as e:
+                    logger.warning(f"Cross-encoder reranking failed: {e}. Falling back to original results.")
+                    # Continue with original results - don't let reranking failure break the search
+                
+                # Add reranking metadata
+                if not cross_encoder_success and settings.enable_debug_logging:
+                    logger.info("Cross-encoder reranking was requested but failed or unavailable - results may be less precise")
             
             # Phase 4: Entity-aware boosting
             if getattr(settings, 'enable_entity_indexing', False) and query_analysis.get("detected_entities"):

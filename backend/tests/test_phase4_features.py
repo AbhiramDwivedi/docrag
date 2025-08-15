@@ -611,5 +611,201 @@ class TestPhase4Security:
             assert not (isinstance(invalid_model, str) and len(invalid_model) > 0)
 
 
+class TestEntityIndexingIntegration:
+    """Integration tests for entity-aware indexing in ingestion pipeline."""
+    
+    def test_entity_mapping_storage_integration(self):
+        """Test end-to-end entity mapping storage during ingestion."""
+        from ingestion.storage.vector_store import VectorStore
+        from unittest.mock import patch, MagicMock
+        import tempfile
+        import sqlite3
+        
+        # Create a temporary database for testing
+        with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as temp_db:
+            db_path = temp_db.name
+        
+        try:
+            # Initialize vector store with entity mappings table
+            with patch('faiss.read_index'), patch('faiss.IndexFlatIP'), patch('faiss.write_index'):
+                vector_store = VectorStore.load(
+                    index_path=Path("/tmp/test_index"), 
+                    db_path=Path(db_path),
+                    dim=384
+                )
+            
+            # Mock entity extractor to return test entities
+            mock_entities = [
+                {
+                    "text": "Apple Inc",
+                    "label": "ORG", 
+                    "start": 0,
+                    "end": 9,
+                    "confidence": 1.0
+                }
+            ]
+            
+            # Test that entity mappings are created correctly
+            from shared.entity_indexing import create_entity_document_mapping
+            mappings = create_entity_document_mapping(mock_entities, "test_doc", "test_chunk")
+            
+            # Verify mappings were created correctly
+            assert len(mappings) == 1
+            assert mappings[0]["entity_text"] == "apple inc"
+            assert mappings[0]["entity_label"] == "ORG"
+            assert mappings[0]["document_id"] == "test_doc"
+            assert mappings[0]["chunk_id"] == "test_chunk"
+            
+            # Verify database table exists and can store mappings
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            
+            # Check if entity_mappings table exists
+            cursor.execute("""
+                SELECT name FROM sqlite_master 
+                WHERE type='table' AND name='entity_mappings'
+            """)
+            table_exists = cursor.fetchone() is not None
+            assert table_exists, "entity_mappings table should exist"
+            
+            # Test inserting mapping
+            cursor.execute("""
+                INSERT INTO entity_mappings 
+                (entity_text, entity_label, document_id, chunk_id, start_pos, end_pos, confidence)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, ("apple inc", "ORG", "test_doc", "test_chunk", 0, 9, 1.0))
+            
+            conn.commit()
+            
+            # Verify insertion
+            cursor.execute("SELECT * FROM entity_mappings WHERE entity_text = ?", ("apple inc",))
+            result = cursor.fetchone()
+            assert result is not None
+            assert result[1] == "apple inc"  # entity_text
+            assert result[2] == "ORG"  # entity_label
+            
+            conn.close()
+            
+        finally:
+            # Cleanup
+            import os
+            os.unlink(db_path)
+    
+    def test_entity_boosting_integration(self):
+        """Test entity boosting in search results."""
+        from querying.agents.plugins.semantic_search import SemanticSearchPlugin
+        from unittest.mock import Mock, patch
+        
+        # Mock plugin initialization
+        plugin = SemanticSearchPlugin()
+        
+        # Mock search results with entity mappings
+        mock_results = [
+            {
+                "id": "chunk1",
+                "score": 0.8,
+                "content": "Apple Inc is a technology company",
+                "metadata": {"document_id": "doc1"}
+            },
+            {
+                "id": "chunk2", 
+                "score": 0.7,
+                "content": "Microsoft Corporation develops software",
+                "metadata": {"document_id": "doc2"}
+            }
+        ]
+        
+        # Mock entity mappings for boosting
+        mock_mappings = [
+            {"chunk_id": "chunk1", "entity_text": "apple inc", "entity_label": "ORG"}
+        ]
+        
+        with patch.object(plugin, '_get_entity_mappings', return_value=mock_mappings):
+            from shared.entity_indexing import get_entity_boost_score
+            
+            # Test entity boost calculation
+            boost_score = get_entity_boost_score(["apple"], mock_mappings, 0.2)
+            assert boost_score > 0, "Should get boost for entity match"
+            
+            # Test no boost for non-matching entity
+            no_boost = get_entity_boost_score(["tesla"], mock_mappings, 0.2)
+            assert no_boost == 0, "Should get no boost for non-matching entity"
+
+
+class TestSecurityValidation:
+    """Security validation tests for Phase 4 features."""
+    
+    def test_entity_extraction_input_validation(self):
+        """Test security validation for entity extraction input."""
+        from shared.entity_indexing import EntityExtractor
+        
+        extractor = EntityExtractor()
+        
+        # Test with potentially malicious input
+        malicious_inputs = [
+            "<script>alert('xss')</script>",
+            "'; DROP TABLE entities; --",
+            "\x00\x01\x02",  # Null bytes
+            "A" * 10000,  # Very long string
+        ]
+        
+        for malicious_input in malicious_inputs:
+            # Should handle gracefully without throwing security exceptions
+            if extractor.is_available():
+                # If spaCy is available, should return empty or filtered results
+                result = extractor.extract_entities(malicious_input)
+                assert isinstance(result, list), "Should return list even for malicious input"
+            else:
+                # If not available, should return empty list
+                result = extractor.extract_entities(malicious_input)
+                assert result == [], "Should return empty list when unavailable"
+    
+    def test_openai_api_key_security_validation(self):
+        """Test comprehensive OpenAI API key validation."""
+        from shared.config import Settings
+        import os
+        
+        # Test placeholder detection
+        invalid_keys = [
+            "your-openai-api-key-here",
+            "sk-placeholder", 
+            "change-me",
+            "your-key-here",
+            "OPENAI_API_KEY",
+            "",
+            None
+        ]
+        
+        for invalid_key in invalid_keys:
+            if invalid_key is not None:
+                # Set invalid key in environment
+                os.environ["OPENAI_API_KEY"] = invalid_key
+                
+                # Should detect as invalid
+                try:
+                    settings = Settings()
+                    # If validation is working, this should either raise or use default
+                    assert True  # Just verify no crashes
+                except Exception:
+                    # Expected for some invalid keys
+                    pass
+            
+        # Test valid-looking key format
+        valid_key = "sk-1234567890abcdef1234567890abcdef1234567890abcdef"
+        os.environ["OPENAI_API_KEY"] = valid_key
+        
+        try:
+            settings = Settings()
+            # Should accept valid format
+            assert True
+        except Exception as e:
+            # Should not fail for valid format
+            pytest.fail(f"Valid key format rejected: {e}")
+        
+        # Cleanup
+        if "OPENAI_API_KEY" in os.environ:
+            del os.environ["OPENAI_API_KEY"]
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

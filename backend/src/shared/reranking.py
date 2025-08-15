@@ -69,13 +69,14 @@ class CrossEncoderReranker:
         
         return self._model
     
-    def rerank(self, query: str, results: List[Dict[str, Any]], top_k: int = 20) -> List[Dict[str, Any]]:
-        """Rerank search results using cross-encoder model.
+    def rerank(self, query: str, results: List[Dict[str, Any]], top_k: int = 20, batch_size: int = 32) -> List[Dict[str, Any]]:
+        """Rerank search results using cross-encoder model with batching optimization.
         
         Args:
             query: The search query
             results: List of search results to rerank
             top_k: Number of top results to return after reranking
+            batch_size: Size of batches for processing large result sets
             
         Returns:
             Reranked list of results with cross-encoder scores
@@ -89,38 +90,55 @@ class CrossEncoderReranker:
             logger.debug("Cross-encoder model not available, returning original results")
             return results[:top_k]
         
+        # Performance optimization: limit input size for large result sets
+        max_input_size = min(len(results), 100)  # Process at most 100 results
+        if len(results) > max_input_size:
+            logger.debug(f"Limiting reranking input from {len(results)} to {max_input_size} results for performance")
+            results = results[:max_input_size]
+        
         try:
             # Prepare query-document pairs for cross-encoder
             query_doc_pairs = []
             for result in results:
-                doc_text = result.get('text', '')
+                doc_text = result.get('text', '') or result.get('content', '')
                 # Truncate very long documents to avoid model limits
                 if len(doc_text) > 512:
                     doc_text = doc_text[:512] + "..."
                 query_doc_pairs.append([query, doc_text])
             
-            # Get cross-encoder scores
+            # Get cross-encoder scores with batching for performance
             if not query_doc_pairs:
                 return results[:top_k]
-                
-            cross_encoder_scores = model.predict(query_doc_pairs)
+            
+            cross_encoder_scores = []
+            
+            # Process in batches to avoid memory issues with large datasets
+            for i in range(0, len(query_doc_pairs), batch_size):
+                batch = query_doc_pairs[i:i + batch_size]
+                try:
+                    batch_scores = model.predict(batch)
+                    cross_encoder_scores.extend(batch_scores)
+                except Exception as e:
+                    logger.error(f"Error processing batch {i//batch_size + 1}: {e}")
+                    # Use zero scores for failed batch to maintain order
+                    cross_encoder_scores.extend([0.0] * len(batch))
             
             # Add cross-encoder scores to results and sort
             reranked_results = []
             for i, result in enumerate(results):
                 enhanced_result = result.copy()
-                enhanced_result['cross_encoder_score'] = float(cross_encoder_scores[i])
+                enhanced_result['cross_encoder_score'] = float(cross_encoder_scores[i]) if i < len(cross_encoder_scores) else 0.0
                 enhanced_result['original_rank'] = i
                 reranked_results.append(enhanced_result)
             
-            # Sort by cross-encoder score (higher is better)
-            reranked_results.sort(key=lambda x: x['cross_encoder_score'], reverse=True)
+            # Sort by cross-encoder score (higher is better) with deterministic tie-breaking
+            reranked_results.sort(key=lambda x: (x['cross_encoder_score'], -x['original_rank']), reverse=True)
             
             # Take top k results
             final_results = reranked_results[:top_k]
             
             if logger.isEnabledFor(logging.DEBUG):
-                logger.debug(f"Cross-encoder reranking: {len(results)} -> {len(final_results)} results")
+                logger.debug(f"Cross-encoder reranking: {len(results)} -> {len(final_results)} results (batch_size={batch_size})")
                 if final_results:
                     logger.debug(f"Top cross-encoder score: {final_results[0]['cross_encoder_score']:.3f}")
                     logger.debug(f"Bottom cross-encoder score: {final_results[-1]['cross_encoder_score']:.3f}")
