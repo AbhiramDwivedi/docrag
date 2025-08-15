@@ -12,6 +12,8 @@ from .discovery_agent import DiscoveryAgent
 from .analysis_agent import AnalysisAgent
 from .knowledge_graph_agent import KnowledgeGraphAgent
 from ..registry import PluginRegistry
+from shared.constraints import ConstraintExtractor
+from shared.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -262,13 +264,69 @@ class OrchestratorAgent(BaseAgent):
             )
     
     def _create_metadata_query_plan(self, plan: ExecutionPlan, query: str, intent_result) -> None:
-        """Create plan for metadata queries."""
-        # Simple plan - just return metadata
-        plan.add_step(
-            StepType.RETURN_METADATA,
-            "discovery",
-            {"query": query, "intent": "metadata_query"}
-        )
+        """Create plan for metadata queries with constraint-aware orchestration."""
+        settings = get_settings()
+        
+        # Extract constraints from the query
+        constraints = ConstraintExtractor.extract(query)
+        
+        self.orchestrator_logger.debug(f"Extracted constraints: count={constraints.count}, "
+                                     f"file_types={constraints.file_types}, "
+                                     f"recency={constraints.recency}, "
+                                     f"content_terms={constraints.content_terms}")
+        
+        # Determine if we need content filtering
+        has_content_terms = len(constraints.content_terms) > 0
+        
+        if not has_content_terms:
+            # Single-step metadata plan
+            plan.add_step(
+                StepType.RETURN_METADATA,
+                "discovery",
+                {
+                    "query": query, 
+                    "intent": "metadata_query",
+                    "count": constraints.count or settings.default_latest_count,
+                    "file_types": constraints.file_types,
+                    "recency": constraints.recency
+                }
+            )
+        else:
+            # Two-step plan: metadata narrowing + content filtering
+            
+            # Step 1: Metadata filtering with widened count
+            requested_count = constraints.count or settings.default_latest_count
+            widened_count = min(
+                requested_count * settings.content_filter_widen_factor,
+                settings.semantic_max_k
+            )
+            
+            metadata_step = plan.add_step(
+                StepType.RETURN_METADATA,
+                "discovery", 
+                {
+                    "query": query,
+                    "intent": "metadata_query", 
+                    "count": widened_count,
+                    "file_types": constraints.file_types,
+                    "recency": constraints.recency
+                }
+            )
+            
+            # Step 2: Content filtering on metadata results
+            content_query = ' '.join(constraints.content_terms)
+            plan.add_step(
+                StepType.ANALYZE_CONTENT,
+                "analysis",
+                {
+                    "query": content_query,
+                    "intent": "content_filtering",
+                    "target_docs_from_step": metadata_step,  # Reference to metadata step
+                    "max_documents": requested_count,
+                    "k": min(widened_count, settings.semantic_max_k)
+                },
+                dependencies=[metadata_step]
+            )
     
     def _create_relationship_analysis_plan(self, plan: ExecutionPlan, query: str, intent_result) -> None:
         """Create plan for relationship analysis queries."""

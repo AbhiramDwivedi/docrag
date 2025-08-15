@@ -10,6 +10,7 @@ class StepType(Enum):
     """Types of execution steps available in the agentic system."""
     DISCOVER_DOCUMENT = "discover_document"
     EXTRACT_CONTENT = "extract_content"
+    ANALYZE_CONTENT = "analyze_content"
     ANALYZE_DECISIONS = "analyze_decisions"
     COMPARE_ACROSS_DOCS = "compare_across_docs"
     FIND_RELATIONSHIPS = "find_relationships"

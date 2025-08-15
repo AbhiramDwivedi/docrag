@@ -199,22 +199,44 @@ class DiscoveryAgent(BaseAgent):
             # Determine appropriate metadata operation based on query
             query = step.parameters.get("query", context.query).lower()
             
+            # Extract constraint parameters from step
+            count = step.parameters.get("count")
+            file_types = step.parameters.get("file_types", [])
+            recency = step.parameters.get("recency", False)
+            
+            # Build metadata operation parameters
+            metadata_params = {"operation": "get_latest_files"}
+            
             if any(term in query for term in ["how many", "count", "number of"]):
-                operation = "get_file_count"
-            elif any(term in query for term in ["recent", "latest", "newest"]):
-                operation = "get_latest_files"
+                metadata_params["operation"] = "get_file_count"
+            elif any(term in query for term in ["recent", "latest", "newest"]) or recency:
+                metadata_params["operation"] = "get_latest_files" 
+                if count:
+                    metadata_params["count"] = count
+                if file_types:
+                    metadata_params["file_type"] = file_types[0] if len(file_types) == 1 else file_types
             elif any(term in query for term in ["types", "file types", "extensions"]):
-                operation = "get_file_types"
+                metadata_params["operation"] = "get_file_types"
             elif any(term in query for term in ["stats", "statistics", "summary"]):
-                operation = "get_file_stats"
+                metadata_params["operation"] = "get_file_stats"
             elif any(term in query for term in ["list", "show", "all files", "all documents"]):
-                operation = "find_files"
+                metadata_params["operation"] = "find_files"
+                if count:
+                    metadata_params["count"] = count
+                if file_types:
+                    metadata_params["file_type"] = file_types[0] if len(file_types) == 1 else file_types
             else:
-                # Default to file listing for general metadata queries
-                operation = "find_files"
+                # Default to latest files for general metadata queries
+                metadata_params["operation"] = "get_latest_files"
+                if count:
+                    metadata_params["count"] = count
+                if file_types:
+                    metadata_params["file_type"] = file_types[0] if len(file_types) == 1 else file_types
+            
+            self.agent_logger.debug(f"Metadata operation parameters: {metadata_params}")
             
             # Execute the metadata operation
-            result = metadata_plugin.execute({"operation": operation})
+            result = metadata_plugin.execute(metadata_params)
             
             # Extract response from plugin result
             if isinstance(result, dict) and "response" in result:
@@ -227,8 +249,9 @@ class DiscoveryAgent(BaseAgent):
                 {
                     "metadata_result": result,
                     "formatted_response": formatted_response,
-                    "operation": operation,
-                    "source": "metadata_plugin"
+                    "operation": metadata_params["operation"],
+                    "source": "metadata_plugin",
+                    "discovered_documents": result.get("files", []) if isinstance(result, dict) else []
                 },
                 confidence=0.8
             )

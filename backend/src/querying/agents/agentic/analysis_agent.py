@@ -52,6 +52,7 @@ class AnalysisAgent(BaseAgent):
         """
         return step.step_type in [
             StepType.EXTRACT_CONTENT,
+            StepType.ANALYZE_CONTENT,
             StepType.ANALYZE_DECISIONS,
             StepType.COMPARE_ACROSS_DOCS,
             StepType.SYNTHESIZE_FINDINGS
@@ -79,6 +80,8 @@ class AnalysisAgent(BaseAgent):
         """
         if step.step_type == StepType.EXTRACT_CONTENT:
             return self._extract_content(step, context)
+        elif step.step_type == StepType.ANALYZE_CONTENT:
+            return self._analyze_content(step, context)
         elif step.step_type == StepType.ANALYZE_DECISIONS:
             return self._analyze_decisions(step, context)
         elif step.step_type == StepType.COMPARE_ACROSS_DOCS:
@@ -143,6 +146,86 @@ class AnalysisAgent(BaseAgent):
         except Exception as e:
             self.agent_logger.error(f"Content extraction failed: {e}")
             return self._create_failure_result(step, f"Content extraction error: {e}")
+    
+    def _analyze_content(self, step: ExecutionStep, context: AgentContext) -> StepResult:
+        """Analyze content with semantic search restricted to target documents.
+        
+        This method implements the content filtering step for complex queries,
+        performing semantic search on a restricted set of documents.
+        
+        Args:
+            step: ExecutionStep with content analysis parameters
+            context: AgentContext with document information
+            
+        Returns:
+            StepResult with filtered content
+        """
+        self.agent_logger.info("Executing content analysis with target document filtering")
+        
+        try:
+            # Get semantic search plugin
+            semantic_plugin = self.registry.get_plugin("semantic_search")
+            if not semantic_plugin:
+                return self._create_failure_result(
+                    step, "Semantic search plugin not available for content analysis"
+                )
+            
+            # Get target documents from previous step or parameters
+            target_docs = self._get_target_documents(step, context)
+            if not target_docs:
+                return self._create_failure_result(
+                    step, "No target documents available for content filtering"
+                )
+            
+            # Prepare semantic search parameters with target documents
+            query = step.parameters.get("query", context.query)
+            max_documents = step.parameters.get("max_documents", 10)
+            k = step.parameters.get("k", 50)
+            
+            search_params = {
+                "question": query,
+                "target_docs": [doc.get("path", doc.get("file_path", "")) for doc in target_docs],
+                "k": min(k, len(target_docs)),
+                "max_documents": max_documents
+            }
+            
+            self.agent_logger.debug(f"Content analysis parameters: query='{query}', "
+                                  f"target_docs={len(target_docs)}, max_documents={max_documents}")
+            
+            # Execute semantic search with restricted document set
+            if not semantic_plugin.validate_params(search_params):
+                return self._create_failure_result(
+                    step, "Invalid parameters for content analysis"
+                )
+            
+            result = semantic_plugin.execute(search_params)
+            
+            # Process results with stable ordering (similarity desc, path asc)
+            filtered_content = self._process_content_analysis_results(
+                result, target_docs, max_documents
+            )
+            
+            # Store in context
+            source_key = f"content_analysis_{step.id}"
+            context.add_extracted_content(source_key, filtered_content)
+            
+            self.agent_logger.info(f"Filtered content to {len(filtered_content.get('sources', []))} relevant documents")
+            
+            return self._create_success_result(
+                step,
+                {
+                    "filtered_content": filtered_content,
+                    "search_params": search_params,
+                    "target_docs_count": len(target_docs),
+                    "final_count": len(filtered_content.get('sources', [])),
+                    "raw_response": result.get("response", "")
+                },
+                confidence=0.9 if filtered_content.get("sources") else 0.2
+            )
+            
+        except Exception as e:
+            self.agent_logger.error(f"Content analysis failed: {e}")
+            return self._create_failure_result(step, f"Content analysis error: {e}")
     
     def _analyze_decisions(self, step: ExecutionStep, context: AgentContext) -> StepResult:
         """Analyze decisions within extracted or target content.
@@ -570,3 +653,70 @@ Answer:"""
             summary += "No common themes identified."
         
         return summary
+    
+    def _get_target_documents(self, step: ExecutionStep, context: AgentContext) -> List[Dict[str, Any]]:
+        """Get target documents from step parameters or context.
+        
+        Args:
+            step: ExecutionStep with potential target documents reference
+            context: AgentContext with stored information
+            
+        Returns:
+            List of target document metadata
+        """
+        # Check if target documents are referenced from a previous step
+        target_docs_step = step.parameters.get("target_docs_from_step")
+        if target_docs_step:
+            # Get documents from the referenced step result
+            step_result = context.get_step_result(target_docs_step.id)
+            if step_result and step_result.is_successful():
+                result_data = step_result.get_result_data()
+                if "discovered_documents" in result_data:
+                    return result_data["discovered_documents"]
+                elif "metadata_result" in result_data:
+                    metadata_result = result_data["metadata_result"]
+                    if isinstance(metadata_result, dict) and "files" in metadata_result:
+                        return metadata_result["files"]
+        
+        # Fallback to direct target_docs parameter
+        target_docs = step.parameters.get("target_docs", [])
+        if target_docs:
+            return [{"path": doc} for doc in target_docs]
+        
+        # Fallback to context discovered documents
+        return context.discovered_documents or []
+    
+    def _process_content_analysis_results(self, result: Dict[str, Any], 
+                                        target_docs: List[Dict[str, Any]], 
+                                        max_documents: int) -> Dict[str, Any]:
+        """Process semantic search results with stable ordering and clipping.
+        
+        Args:
+            result: Raw semantic search results
+            target_docs: Original target document list
+            max_documents: Maximum documents to return
+            
+        Returns:
+            Processed results with stable ordering
+        """
+        if not result or "sources" not in result:
+            return {"sources": [], "response": result.get("response", "")}
+        
+        sources = result["sources"]
+        
+        # Ensure stable ordering: similarity desc, then path asc for ties
+        # Assuming sources are already sorted by similarity desc from semantic search
+        sorted_sources = sorted(sources, key=lambda x: (
+            -x.get("similarity", 0),  # Negative for desc order
+            x.get("file_path", x.get("path", ""))  # Path ascending for ties
+        ))
+        
+        # Clip to requested count
+        final_sources = sorted_sources[:max_documents]
+        
+        return {
+            "sources": final_sources,
+            "response": result.get("response", ""),
+            "total_candidates": len(sources),
+            "final_count": len(final_sources)
+        }

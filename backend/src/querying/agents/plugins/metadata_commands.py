@@ -601,7 +601,7 @@ class MetadataCommandsPlugin(Plugin):
         }
     
     def _get_latest_files(self, params: Dict[str, Any], db_connection) -> Dict[str, Any]:
-        """Get latest modified files with optional filters."""
+        """Get latest modified files with optional filters and deterministic ordering."""
         cursor = db_connection.cursor()
         
         file_type = params.get("file_type")
@@ -615,10 +615,17 @@ class MetadataCommandsPlugin(Plugin):
         has_enhanced = self._has_enhanced_schema(db_connection)
         
         if has_enhanced:
-            # Use enhanced schema
+            # Use enhanced schema with deterministic ordering
             if file_type:
-                conditions.append("f.file_type = ?")
-                query_params.append(file_type.upper())
+                if isinstance(file_type, list) and len(file_type) > 0:
+                    # Multiple file types
+                    file_type_placeholders = ','.join('?' * len(file_type))
+                    conditions.append(f"f.file_type IN ({file_type_placeholders})")
+                    query_params.extend([ft.upper() for ft in file_type])
+                elif isinstance(file_type, str):
+                    # Single file type
+                    conditions.append("f.file_type = ?")
+                    query_params.append(file_type.upper())
             
             if time_filter:
                 date_after = self._parse_time_filter(time_filter)
@@ -628,37 +635,58 @@ class MetadataCommandsPlugin(Plugin):
             
             where_clause = " AND ".join(conditions) if conditions else "1=1"
             
+            # Deterministic ordering: modified_time DESC, then file_name ASC for ties
             query = f"""
                 SELECT f.file_name, f.file_path, f.file_size, f.modified_time, f.file_type
                 FROM files f 
                 WHERE {where_clause}
-                ORDER BY f.modified_time DESC
+                ORDER BY f.modified_time DESC, f.file_name ASC
                 LIMIT ?
             """
             query_params.append(count)
             
         else:
-            # Use basic schema
+            # Use basic schema with deterministic ordering
             if file_type:
                 ext_map = {
                     "PDF": ".pdf", "DOCX": ".docx", "DOC": ".doc", 
                     "XLSX": ".xlsx", "XLS": ".xls", "PPTX": ".pptx", 
                     "PPT": ".ppt", "MSG": ".msg", "TXT": ".txt"
                 }
-                ext = ext_map.get(file_type.upper())
-                if ext:
-                    conditions.append("file LIKE ?")
-                    query_params.append(f"%{ext}")
+                
+                if isinstance(file_type, list) and len(file_type) > 0:
+                    # Multiple file types - build OR conditions
+                    type_conditions = []
+                    for ft in file_type:
+                        ext = ext_map.get(ft.upper())
+                        if ext:
+                            type_conditions.append("file LIKE ?")
+                            query_params.append(f"%{ext}")
+                    
+                    if type_conditions:
+                        conditions.append(f"({' OR '.join(type_conditions)})")
+                
+                elif isinstance(file_type, str):
+                    # Single file type
+                    ext = ext_map.get(file_type.upper())
+                    if ext:
+                        conditions.append("file LIKE ?")
+                        query_params.append(f"%{ext}")
+            
+            if time_filter:
+                date_after = self._parse_time_filter(time_filter)
+                if date_after:
+                    conditions.append("modified >= ?")
+                    query_params.append(date_after.timestamp())
             
             where_clause = " AND ".join(conditions) if conditions else "1=1"
-            where_clause += " AND current = 1"
             
+            # Deterministic ordering for basic schema too
             query = f"""
-                SELECT DISTINCT file, MAX(mtime) as latest_mtime 
+                SELECT DISTINCT file, modified
                 FROM chunks 
-                WHERE {where_clause}
-                GROUP BY file 
-                ORDER BY latest_mtime DESC 
+                WHERE current = 1 AND {where_clause}
+                ORDER BY modified DESC, file ASC
                 LIMIT ?
             """
             query_params.append(count)
