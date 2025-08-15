@@ -30,12 +30,15 @@ class TestEntityExtractor:
     
     def test_entity_extractor_unavailable(self):
         """Test behavior when spaCy is unavailable."""
-        with patch('shared.entity_indexing.spacy') as mock_spacy:
-            # Simulate ImportError when importing spaCy
-            def raise_import_error(*args, **kwargs):
-                raise ImportError("No module named 'spacy'")
+        # Test the initialization with ImportError
+        with patch('builtins.__import__') as mock_import:
+            # Make spacy import fail
+            def mock_import_func(name, *args, **kwargs):
+                if name == 'spacy':
+                    raise ImportError("No module named 'spacy'")
+                return __import__(name, *args, **kwargs)
             
-            mock_spacy.side_effect = raise_import_error
+            mock_import.side_effect = mock_import_func
             
             extractor = EntityExtractor()
             assert not extractor.is_available()
@@ -44,9 +47,11 @@ class TestEntityExtractor:
             entities = extractor.extract_entities("Apple Inc is a technology company.")
             assert entities == []
     
-    @patch('shared.entity_indexing.spacy')
-    def test_entity_extraction_success(self, mock_spacy):
+    def test_entity_extraction_success(self):
         """Test successful entity extraction with mock spaCy."""
+        # Create extractor and mock its internal components
+        extractor = EntityExtractor()
+        
         # Mock spaCy components
         mock_nlp = Mock()
         mock_doc = Mock()
@@ -67,12 +72,9 @@ class TestEntityExtractor:
         mock_doc.ents = [mock_ent1, mock_ent2]
         mock_nlp.return_value = mock_doc
         
-        # Mock spaCy module
-        mock_spacy.load.return_value = mock_nlp
-        
-        extractor = EntityExtractor()
+        # Override the internal state to mock spaCy availability
         extractor._available = True
-        extractor._spacy = mock_spacy
+        extractor._nlp = mock_nlp
         
         text = "Apple Inc is headquartered in California."
         entities = extractor.extract_entities(text)
@@ -83,9 +85,10 @@ class TestEntityExtractor:
         assert entities[1]["text"] == "California"
         assert entities[1]["label"] == "GPE"
     
-    @patch('shared.entity_indexing.spacy')
-    def test_entity_extraction_filter_types(self, mock_spacy):
+    def test_entity_extraction_filter_types(self):
         """Test that only relevant entity types are returned."""
+        extractor = EntityExtractor()
+        
         mock_nlp = Mock()
         mock_doc = Mock()
         
@@ -110,11 +113,10 @@ class TestEntityExtractor:
         
         mock_doc.ents = [mock_ent1, mock_ent2, mock_ent3]
         mock_nlp.return_value = mock_doc
-        mock_spacy.load.return_value = mock_nlp
         
-        extractor = EntityExtractor()
+        # Override internal state
         extractor._available = True
-        extractor._spacy = mock_spacy
+        extractor._nlp = mock_nlp
         
         entities = extractor.extract_entities("Test text")
         
@@ -411,7 +413,7 @@ class TestSemanticSearchPhase4:
         return plugin
     
     @patch('shared.config.settings')
-    @patch('shared.reranking.embed_texts')
+    @patch('ingestion.processors.embedder.embed_texts')
     def test_execute_with_cross_encoder_disabled(self, mock_embed, mock_settings, mock_plugin):
         """Test execution with cross-encoder disabled."""
         mock_settings.openai_api_key = "test-key"
@@ -439,7 +441,7 @@ class TestSemanticSearchPhase4:
         assert result["metadata"]["query_expansion_enabled"] is False
     
     @patch('shared.config.settings')
-    @patch('shared.reranking.embed_texts')
+    @patch('ingestion.processors.embedder.embed_texts')
     def test_execute_with_query_expansion_enabled(self, mock_embed, mock_settings, mock_plugin):
         """Test execution with query expansion enabled."""
         mock_settings.openai_api_key = "test-key"
@@ -455,7 +457,8 @@ class TestSemanticSearchPhase4:
         
         params = {
             "question": "What is Tesla?",
-            "enable_mmr": False
+            "enable_mmr": False,
+            "enable_query_expansion": True
         }
         
         # Mock the query analysis to detect entity
@@ -472,7 +475,7 @@ class TestSemanticSearchPhase4:
         assert result["metadata"]["expanded_queries_count"] > 1
     
     @patch('shared.config.settings')
-    @patch('shared.reranking.embed_texts')
+    @patch('ingestion.processors.embedder.embed_texts')
     def test_execute_with_cross_encoder_enabled(self, mock_embed, mock_settings, mock_plugin):
         """Test execution with cross-encoder enabled."""
         mock_settings.openai_api_key = "test-key"
@@ -492,11 +495,12 @@ class TestSemanticSearchPhase4:
         mock_cross_encoder = Mock()
         mock_cross_encoder.is_available.return_value = True
         mock_cross_encoder.rerank.return_value = mock_plugin._vector_store.query.return_value[:1]
-        plugin._cross_encoder = mock_cross_encoder
+        mock_plugin._cross_encoder = mock_cross_encoder
         
         params = {
             "question": "What is Tesla?",
-            "enable_mmr": False
+            "enable_mmr": False,
+            "enable_cross_encoder": True
         }
         
         result = mock_plugin.execute(params)

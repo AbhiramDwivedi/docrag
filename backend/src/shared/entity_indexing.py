@@ -158,11 +158,13 @@ def enhance_chunk_with_entities(chunk_data: Dict[str, Any],
     
     if not extractor.is_available():
         enhanced_chunk['entities'] = []
+        enhanced_chunk['entity_count'] = 0
         return enhanced_chunk
     
     text = chunk_data.get('content', '')
     if not text:
         enhanced_chunk['entities'] = []
+        enhanced_chunk['entity_count'] = 0
         return enhanced_chunk
     
     # Extract entities
