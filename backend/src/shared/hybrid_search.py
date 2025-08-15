@@ -130,7 +130,8 @@ def classify_query_intent(query: str) -> Dict[str, Any]:
     query_lower = query.lower().strip()
     
     # Detect proper nouns (capitalized words) but exclude common question/sentence starters
-    question_words = {'what', 'who', 'where', 'when', 'why', 'how', 'which', 'the', 'a', 'an'}
+    question_words = {'what', 'who', 'where', 'when', 'why', 'how', 'which', 'the', 'a', 'an', 
+                     'explain', 'describe', 'tell', 'show', 'give', 'provide', 'list', 'find'}
     proper_nouns = re.findall(r'\b[A-Z][A-Z0-9]*\b', query)  # All caps words
     title_case_words = re.findall(r'\b[A-Z][a-z]+\b', query)  # Title case words
     
