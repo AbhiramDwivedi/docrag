@@ -130,7 +130,8 @@ def classify_query_intent(query: str) -> Dict[str, Any]:
     query_lower = query.lower().strip()
     
     # Detect proper nouns (capitalized words) but exclude common question/sentence starters
-    question_words = {'what', 'who', 'where', 'when', 'why', 'how', 'which', 'the', 'a', 'an'}
+    question_words = {'what', 'who', 'where', 'when', 'why', 'how', 'which', 'the', 'a', 'an', 
+                     'explain', 'describe', 'tell', 'show', 'give', 'provide', 'list', 'find'}
     proper_nouns = re.findall(r'\b[A-Z][A-Z0-9]*\b', query)  # All caps words
     title_case_words = re.findall(r'\b[A-Z][a-z]+\b', query)  # Title case words
     
@@ -169,10 +170,10 @@ def classify_query_intent(query: str) -> Dict[str, Any]:
     if lexical_score > semantic_score:
         strategy = "lexical_primary"
         confidence = min(0.9, 0.6 + lexical_score * 0.1)
-    elif proper_nouns and word_count <= 5:
-        # Short queries with proper nouns benefit from hybrid
+    elif proper_nouns:
+        # Queries with proper nouns benefit from hybrid search for exact matching
         strategy = "hybrid"
-        confidence = min(0.8, 0.5 + len(proper_nouns) * 0.1)
+        confidence = min(0.8, 0.5 + len(proper_nouns) * 0.15)
     elif word_count <= 3:
         # Very short queries benefit from hybrid
         strategy = "hybrid" 

@@ -128,9 +128,14 @@ class ComprehensiveReportingPlugin(Plugin):
         """Get or initialize the vector store."""
         if self._vector_store is None:
             try:
+                # Import settings here to avoid circular imports
+                from shared.config import settings
+                # Use correct dimensions based on embedding model
+                vector_dim = 768 if settings.embed_model == "intfloat/e5-base-v2" else 384
                 self._vector_store = VectorStore.load(
                     Path(self.vector_store_path), 
-                    Path(self.db_path)
+                    Path(self.db_path),
+                    dim=vector_dim
                 )
             except Exception as e:
                 logger.error(f"Failed to load vector store: {e}")

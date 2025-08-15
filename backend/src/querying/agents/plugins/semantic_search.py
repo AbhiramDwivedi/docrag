@@ -22,6 +22,7 @@ try:
     from shared.config import settings
     from shared.mmr import mmr_selection, extract_embeddings_from_results
     from shared.hybrid_search import merge_search_results, classify_query_intent
+    from shared.reranking import CrossEncoderReranker, expand_entity_query
 except ImportError:
     # Fallback to absolute imports
     try:
@@ -30,6 +31,7 @@ except ImportError:
         from src.shared.config import settings
         from src.shared.mmr import mmr_selection, extract_embeddings_from_results
         from src.shared.hybrid_search import merge_search_results, classify_query_intent
+        from src.shared.reranking import CrossEncoderReranker, expand_entity_query
     except ImportError:
         # Last resort - relative imports from backend root
         import os
@@ -40,6 +42,7 @@ except ImportError:
         from src.shared.config import settings
         from src.shared.mmr import mmr_selection, extract_embeddings_from_results
         from src.shared.hybrid_search import merge_search_results, classify_query_intent
+        from src.shared.reranking import CrossEncoderReranker, expand_entity_query
 
 from openai import OpenAI
 
@@ -62,17 +65,20 @@ class SemanticSearchPlugin(Plugin):
         self._vector_store = None
         self._openai_client = None
         self._lexical_plugin = None
+        self._cross_encoder = None
     
     def execute(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute enhanced semantic search with hybrid search support.
+        """Execute enhanced semantic search with Phase 4 advanced features.
         
-        Implements multi-stage search process with optional hybrid lexical search:
+        Implements multi-stage search process with optional advanced features:
         1. Query Analysis - Detect entity/proper noun queries and classify intent
-        2. Strategy Selection - Choose semantic-only, lexical-only, or hybrid approach
-        3. Search Execution - Run appropriate search strategy
-        4. Result Merging - Combine and deduplicate results if hybrid
-        5. MMR Selection - Select diverse relevant chunks
-        6. Response Generation - Synthesize answer with attribution
+        2. Query Expansion - Expand entity queries with variants (Phase 4)
+        3. Strategy Selection - Choose semantic-only, lexical-only, or hybrid approach
+        4. Search Execution - Run appropriate search strategy
+        5. Cross-encoder Reranking - Rerank results for better precision (Phase 4)
+        6. Result Merging - Combine and deduplicate results if hybrid
+        7. MMR Selection - Select diverse relevant chunks
+        8. Response Generation - Synthesize answer with attribution
         
         Args:
             params: Dictionary containing:
@@ -84,6 +90,8 @@ class SemanticSearchPlugin(Plugin):
                 - include_metadata_boost: Include metadata/filename boosting (default: auto-detect)
                 - force_semantic_only: Force semantic search only (default: False)
                 - force_hybrid: Force hybrid search (default: False)
+                - enable_cross_encoder: Override config for cross-encoder reranking (Phase 4)
+                - enable_query_expansion: Override config for query expansion (Phase 4)
                 
         Returns:
             Dictionary containing:
@@ -99,6 +107,10 @@ class SemanticSearchPlugin(Plugin):
         include_metadata_boost = params.get("include_metadata_boost", None)  # Auto-detect if None
         force_semantic_only = params.get("force_semantic_only", False)
         force_hybrid = params.get("force_hybrid", False)
+        
+        # Phase 4: Advanced features
+        enable_cross_encoder = params.get("enable_cross_encoder", getattr(settings, 'enable_cross_encoder_reranking', False))
+        enable_query_expansion = params.get("enable_query_expansion", getattr(settings, 'enable_query_expansion', False))
         
         if not question.strip():
             return {
@@ -150,16 +162,48 @@ class SemanticSearchPlugin(Plugin):
             
             # Initialize vector store if needed
             if self._vector_store is None:
+                # Use 768 dimensions for E5 model (intfloat/e5-base-v2)
+                # TODO: Auto-detect dimension from model or index
+                vector_dim = 768 if settings.embed_model == "intfloat/e5-base-v2" else 384
                 self._vector_store = VectorStore.load(
                     Path(settings.vector_path), 
-                    Path(settings.db_path)
+                    Path(settings.db_path),
+                    dim=vector_dim
                 )
             
-            # Stage 2: Execute search strategy
-            if use_hybrid:
-                initial_results = self._execute_hybrid_search(question, k, query_analysis)
+            # Get query embedding for MMR (using original question, not expanded variants)
+            q_vec = embed_texts([question], settings.embed_model)[0]
+            
+            # Phase 4: Query expansion for entity queries
+            queries_to_search = [question]
+            if enable_query_expansion and query_analysis.get("likely_entity_query", False):
+                expanded_queries = expand_entity_query(question, query_analysis.get("detected_entities", []))
+                queries_to_search = expanded_queries
+                if settings.enable_debug_logging:
+                    logger.info(f"Query expansion enabled: {len(queries_to_search)} variants")
+            
+            # Stage 2: Execute search strategy (with optional expansion)
+            all_results = []
+            for search_query in queries_to_search:
+                if use_hybrid:
+                    query_results = self._execute_hybrid_search(search_query, k, query_analysis)
+                else:
+                    query_results = self._execute_semantic_search(search_query, k, query_analysis)
+                
+                # Mark results with query variant info
+                for result in query_results:
+                    result['search_query'] = search_query
+                    result['is_expanded_query'] = search_query != question
+                
+                all_results.extend(query_results)
+            
+            # Deduplicate results by chunk_id while preserving best scores
+            if len(queries_to_search) > 1:
+                initial_results = self._deduplicate_results(all_results)
+                if settings.enable_debug_logging:
+                    logger.info(f"After deduplication: {len(all_results)} -> {len(initial_results)} results")
             else:
-                initial_results = self._execute_semantic_search(question, k, query_analysis)
+                initial_results = all_results
             
             if not initial_results:
                 return {
@@ -174,6 +218,50 @@ class SemanticSearchPlugin(Plugin):
                     }
                 }
             
+            # Phase 4: Cross-encoder reranking for improved precision
+            cross_encoder_success = False
+            if enable_cross_encoder and initial_results:
+                try:
+                    if self._cross_encoder is None:
+                        cross_encoder_model = getattr(settings, 'cross_encoder_model', 'ms-marco-MiniLM-L-6-v2')
+                        self._cross_encoder = CrossEncoderReranker(cross_encoder_model)
+                    
+                    if self._cross_encoder.is_available():
+                        cross_encoder_top_k = getattr(settings, 'cross_encoder_top_k', 20)
+                        # Limit reranking to reasonable number to avoid performance issues
+                        rerank_input = initial_results[:100]  # Top 100 for reranking
+                        reranked_results = self._cross_encoder.rerank(question, rerank_input, cross_encoder_top_k)
+                        
+                        # Validate reranking results before using them
+                        if reranked_results and len(reranked_results) > 0:
+                            initial_results = reranked_results
+                            cross_encoder_success = True
+                            if settings.enable_debug_logging:
+                                logger.info(f"Cross-encoder reranking successful: {len(rerank_input)} -> {len(initial_results)} results")
+                        else:
+                            if settings.enable_debug_logging:
+                                logger.warning("Cross-encoder reranking returned empty results, using original results")
+                    else:
+                        if settings.enable_debug_logging:
+                            logger.info("Cross-encoder reranking requested but model not available, using original results")
+                            
+                except Exception as e:
+                    logger.warning(f"Cross-encoder reranking failed: {e}. Falling back to original results.")
+                    # Continue with original results - don't let reranking failure break the search
+                
+                # Add reranking metadata
+                if not cross_encoder_success and settings.enable_debug_logging:
+                    logger.info("Cross-encoder reranking was requested but failed or unavailable - results may be less precise")
+            
+            # Phase 4: Entity-aware boosting
+            if getattr(settings, 'enable_entity_indexing', False) and query_analysis.get("detected_entities"):
+                try:
+                    initial_results = self._apply_entity_boosting(initial_results, query_analysis.get("detected_entities", []))
+                    if settings.enable_debug_logging:
+                        logger.info("Applied entity-aware boosting to results")
+                except Exception as e:
+                    if settings.enable_debug_logging:
+                        logger.warning(f"Entity boosting failed: {e}")
             
             # Check for low-quality results - if all results have very low similarity, provide helpful response
             if initial_results:
@@ -217,23 +305,65 @@ class SemanticSearchPlugin(Plugin):
             # Stage 4: MMR Selection for diverse results
             final_results = initial_results
             if enable_mmr and len(initial_results) > mmr_k:
-                if settings.enable_debug_logging:
-                    logger.info(f"Starting MMR selection: {len(initial_results)} -> {mmr_k} with lambda={mmr_lambda}")
+                # Adjust MMR parameters for hybrid search to preserve lexical matches
+                adjusted_lambda = mmr_lambda
+                if use_hybrid:
+                    # For hybrid search, favor relevance over diversity to preserve lexical matches
+                    adjusted_lambda = min(0.9, mmr_lambda + 0.2)  # Increase toward relevance
+                    if settings.enable_debug_logging:
+                        logger.info(f"Adjusting MMR lambda for hybrid search: {mmr_lambda} -> {adjusted_lambda}")
                 
-                # Get embeddings for MMR selection
-                candidate_embeddings = extract_embeddings_from_results(
-                    initial_results, 
-                    lambda texts: embed_texts(texts, settings.embed_model)
-                )
+                # For entity queries with hybrid search, preserve top lexical matches
+                preserve_top_k = 0
+                if use_hybrid and query_analysis.get("likely_entity_query", False):
+                    # Preserve top 5 hybrid results (likely lexical matches) before MMR
+                    preserve_top_k = min(5, mmr_k // 2)
+                    if settings.enable_debug_logging:
+                        logger.info(f"Preserving top {preserve_top_k} hybrid results for entity query")
                 
-                # Apply MMR selection
-                final_results = mmr_selection(
-                    query_embedding=q_vec,
-                    candidate_embeddings=candidate_embeddings,
-                    candidate_results=initial_results,
-                    mmr_lambda=mmr_lambda,
-                    k=mmr_k
-                )
+                if preserve_top_k > 0:
+                    # Split into preserved and MMR-selected results
+                    preserved_results = initial_results[:preserve_top_k]
+                    remaining_results = initial_results[preserve_top_k:]
+                    remaining_k = mmr_k - preserve_top_k
+                    
+                    if remaining_k > 0 and remaining_results:
+                        # Apply MMR to remaining results
+                        candidate_embeddings = extract_embeddings_from_results(
+                            remaining_results, 
+                            lambda texts: embed_texts(texts, settings.embed_model)
+                        )
+                        
+                        mmr_selected = mmr_selection(
+                            query_embedding=q_vec,
+                            candidate_embeddings=candidate_embeddings,
+                            candidate_results=remaining_results,
+                            mmr_lambda=adjusted_lambda,
+                            k=remaining_k
+                        )
+                        
+                        final_results = preserved_results + mmr_selected
+                    else:
+                        final_results = preserved_results
+                else:
+                    # Standard MMR selection
+                    if settings.enable_debug_logging:
+                        logger.info(f"Starting MMR selection: {len(initial_results)} -> {mmr_k} with lambda={adjusted_lambda}")
+                    
+                    # Get embeddings for MMR selection
+                    candidate_embeddings = extract_embeddings_from_results(
+                        initial_results, 
+                        lambda texts: embed_texts(texts, settings.embed_model)
+                    )
+                    
+                    # Apply MMR selection
+                    final_results = mmr_selection(
+                        query_embedding=q_vec,
+                        candidate_embeddings=candidate_embeddings,
+                        candidate_results=initial_results,
+                        mmr_lambda=adjusted_lambda,
+                        k=mmr_k
+                    )
                 
                 if settings.enable_debug_logging:
                     logger.info(f"MMR selection completed: {len(final_results)} results selected")
@@ -296,7 +426,17 @@ Answer:"""
                 "model_used": "gpt-4o-mini",
                 "embedding_model": settings.embed_model,
                 "context_length": len(enhanced_context),
-                "retrieval_k": k
+                "retrieval_k": k,
+                # Phase 4 metadata
+                "cross_encoder_enabled": enable_cross_encoder,
+                "cross_encoder_available": self._cross_encoder.is_available() if self._cross_encoder else False,
+                "query_expansion_enabled": enable_query_expansion,
+                "expanded_queries_count": len(queries_to_search),
+                "phase4_features": {
+                    "cross_encoder_reranking": enable_cross_encoder,
+                    "query_expansion": enable_query_expansion and query_analysis.get("likely_entity_query", False),
+                    "entity_indexing": getattr(settings, 'enable_entity_indexing', False)
+                }
             }
             
             return {
@@ -377,7 +517,16 @@ Answer:"""
                 from .lexical_search import LexicalSearchPlugin
                 self._lexical_plugin = LexicalSearchPlugin()
             
-            lexical_raw_results = self._lexical_plugin.search_raw(question, k)
+            # For lexical search, use detected entities instead of full question
+            # This improves recall by searching for key terms rather than full questions
+            lexical_query = question
+            if query_analysis.get("detected_entities"):
+                # Use detected entities for better lexical search results
+                lexical_query = " ".join(query_analysis["detected_entities"])
+                if settings.enable_debug_logging:
+                    logger.info(f"Using entities for lexical search: '{lexical_query}' (from: '{question}')")
+            
+            lexical_raw_results = self._lexical_plugin.search_raw(lexical_query, k)
             
             if settings.enable_debug_logging:
                 logger.info(f"Lexical component returned {len(lexical_raw_results)} results")
@@ -427,20 +576,20 @@ Answer:"""
             
             for chunk_id, lexical_score in lexical_results:
                 cursor.execute("""
-                    SELECT c.content, c.file_path, c.chunk_index, c.chunk_id,
-                           f.file_name, f.document_title, f.document_id
+                    SELECT c.text, c.file, c.chunk_index, c.id,
+                           f.file_name, c.document_title, c.document_id
                     FROM chunks c
-                    LEFT JOIN files f ON c.file_path = f.file_path
-                    WHERE c.chunk_id = ? AND c.current = 1
+                    LEFT JOIN files f ON c.file = f.file_path
+                    WHERE c.id = ? AND c.current = 1
                 """, (chunk_id,))
                 
                 row = cursor.fetchone()
                 if row:
-                    content, file_path, chunk_index, chunk_id, file_name, doc_title, doc_id = row
+                    text_content, file_path, chunk_index, chunk_id, file_name, doc_title, doc_id = row
                     
                     converted_results.append({
-                        "chunk_id": chunk_id,
-                        "text": content,
+                        "id": chunk_id,
+                        "text": text_content,
                         "file": file_path,
                         "file_path": file_path,
                         "chunk_index": chunk_index,
@@ -474,8 +623,8 @@ Answer:"""
             Merged and deduplicated results sorted by hybrid score
         """
         # Convert to format expected by merge_search_results
-        semantic_tuples = [(r.get("chunk_id", ""), r.get("similarity", 0.0)) for r in semantic_results]
-        lexical_tuples = [(r.get("chunk_id", ""), r.get("similarity", 0.0)) for r in lexical_results]
+        semantic_tuples = [(r.get("id", ""), r.get("similarity", 0.0)) for r in semantic_results]
+        lexical_tuples = [(r.get("id", ""), r.get("similarity", 0.0)) for r in lexical_results]
         
         # Get weights from config
         dense_weight = getattr(settings, 'hybrid_dense_weight', 0.6)
@@ -490,6 +639,12 @@ Answer:"""
         elif strategy == "semantic_primary":
             dense_weight = 0.8
             lexical_weight = 0.2
+        elif query_analysis.get("likely_entity_query", False):
+            # For entity queries, favor lexical search since entities are exact matches
+            dense_weight = 0.3
+            lexical_weight = 0.7
+            if settings.enable_debug_logging:
+                logger.info(f"Adjusting weights for entity query: dense={dense_weight}, lexical={lexical_weight}")
         
         # Merge scores
         merged_scores = merge_search_results(
@@ -498,8 +653,8 @@ Answer:"""
         )
         
         # Create lookup maps for full result data
-        semantic_map = {r.get("chunk_id", ""): r for r in semantic_results}
-        lexical_map = {r.get("chunk_id", ""): r for r in lexical_results}
+        semantic_map = {r.get("id", ""): r for r in semantic_results}
+        lexical_map = {r.get("id", ""): r for r in lexical_results}
         
         # Build final merged results with full data
         merged_results = []
@@ -725,6 +880,85 @@ Answer:"""
         
         return boosted_results
     
+    def _apply_entity_boosting(self, results: List[Dict[str, Any]], detected_entities: List[str]) -> List[Dict[str, Any]]:
+        """Apply Phase 4 entity-aware boosting using entity-document mappings.
+        
+        Args:
+            results: List of search results
+            detected_entities: Entities detected in the query
+            
+        Returns:
+            Results with entity boosting applied based on stored entity mappings
+        """
+        if not detected_entities or not results:
+            return results
+        
+        try:
+            # Get chunk IDs from results
+            chunk_ids = [result.get('chunk_id') for result in results if result.get('chunk_id')]
+            if not chunk_ids:
+                return results
+            
+            # Get entity mappings from vector store
+            entity_mappings = self._vector_store.get_entity_mappings(chunk_ids=chunk_ids)
+            
+            # Create a mapping from chunk_id to its entities for quick lookup
+            chunk_entities = {}
+            for mapping in entity_mappings:
+                chunk_id = mapping['chunk_id']
+                if chunk_id not in chunk_entities:
+                    chunk_entities[chunk_id] = []
+                chunk_entities[chunk_id].append(mapping)
+            
+            # Apply entity boosting
+            entity_boost_factor = getattr(settings, 'entity_boost_factor', 0.2)
+            boosted_results = []
+            
+            for result in results:
+                boosted_result = result.copy()
+                chunk_id = result.get('chunk_id')
+                
+                if chunk_id and chunk_id in chunk_entities:
+                    # Get entity boost score using the stored entity mappings
+                    from shared.entity_indexing import get_entity_boost_score
+                    
+                    chunk_entity_list = chunk_entities[chunk_id]
+                    boost_score = get_entity_boost_score(
+                        detected_entities,
+                        chunk_entity_list,
+                        entity_boost_factor
+                    )
+                    
+                    if boost_score > 0:
+                        # Apply entity boost to similarity
+                        current_similarity = result.get("similarity", 0.0)
+                        boosted_similarity = min(1.0, current_similarity + boost_score)
+                        boosted_distance = 1.0 - boosted_similarity
+                        
+                        boosted_result["similarity"] = boosted_similarity
+                        boosted_result["distance"] = boosted_distance
+                        boosted_result["entity_boosted"] = True
+                        boosted_result["entity_boost_score"] = boost_score
+                        boosted_result["matched_entities"] = len([
+                            ent for ent in detected_entities 
+                            if any(ent.lower() == mapping['entity_text'] for mapping in chunk_entity_list)
+                        ])
+                        
+                        if settings.enable_debug_logging:
+                            logger.debug(f"Entity boosted chunk {chunk_id}: similarity {current_similarity:.3f} -> {boosted_similarity:.3f}")
+                
+                boosted_results.append(boosted_result)
+            
+            # Re-sort by boosted similarity (higher is better)
+            boosted_results.sort(key=lambda x: x.get("similarity", 0.0), reverse=True)
+            
+            return boosted_results
+            
+        except Exception as e:
+            if settings.enable_debug_logging:
+                logger.error(f"Error in entity boosting: {e}")
+            return results
+    
     def _build_enhanced_context(self, results: List[Dict[str, Any]]) -> str:
         """Build enhanced context from search results with proper attribution.
         
@@ -771,8 +1005,8 @@ Answer:"""
         """Return plugin metadata and capabilities."""
         return PluginInfo(
             name="semantic_search",
-            description="Enhanced semantic document search with cosine similarity, MMR selection, and entity query robustness",
-            version="2.1.0",
+            description="Enhanced semantic document search with Phase 4 advanced features: cross-encoder reranking, query expansion, and entity-aware indexing",
+            version="2.2.0",
             capabilities=[
                 "semantic_search",
                 "document_query",
@@ -785,7 +1019,12 @@ Answer:"""
                 "cosine_similarity",
                 "diverse_retrieval",
                 "query_analysis",
-                "structured_logging"
+                "structured_logging",
+                # Phase 4 capabilities
+                "cross_encoder_reranking",
+                "query_expansion",
+                "entity_indexing",
+                "precision_optimization"
             ],
             parameters={
                 "question": "str - The question to search for",
@@ -793,7 +1032,12 @@ Answer:"""
                 "mmr_lambda": "float - MMR balance: 1.0=pure relevance, 0.0=pure diversity (default: from config)",
                 "mmr_k": "int - Final number of chunks after MMR selection (default: from config)",
                 "enable_mmr": "bool - Whether to use MMR selection (default: True)",
-                "include_metadata_boost": "bool - Include metadata/filename boosting (default: auto-detect)"
+                "include_metadata_boost": "bool - Include metadata/filename boosting (default: auto-detect)",
+                "force_semantic_only": "bool - Force semantic search only (default: False)",
+                "force_hybrid": "bool - Force hybrid search (default: False)",
+                # Phase 4 parameters
+                "enable_cross_encoder": "bool - Override config for cross-encoder reranking (default: from config)",
+                "enable_query_expansion": "bool - Override config for query expansion (default: from config)"
             }
         )
     
@@ -829,10 +1073,39 @@ Answer:"""
         
         return True
     
+    def _deduplicate_results(self, results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Deduplicate search results by chunk_id, keeping the best score for each.
+        
+        Args:
+            results: List of search results potentially containing duplicates
+            
+        Returns:
+            Deduplicated list of results sorted by similarity
+        """
+        chunk_map = {}
+        
+        for result in results:
+            chunk_id = result.get('chunk_id', '')
+            if not chunk_id:
+                continue  # Skip results without chunk_id
+            
+            similarity = result.get('similarity', 0.0)
+            
+            if chunk_id not in chunk_map or similarity > chunk_map[chunk_id].get('similarity', 0.0):
+                # Keep this result if it's the first or has better similarity
+                chunk_map[chunk_id] = result
+        
+        # Convert back to list and sort by similarity
+        deduplicated = list(chunk_map.values())
+        deduplicated.sort(key=lambda x: x.get('similarity', 0.0), reverse=True)
+        
+        return deduplicated
+    
     def cleanup(self) -> None:
         """Cleanup plugin resources."""
         # Vector store and OpenAI client don't need explicit cleanup
         # They will be garbage collected
         self._vector_store = None
         self._openai_client = None
+        self._cross_encoder = None
         logger.info("Semantic search plugin cleaned up")

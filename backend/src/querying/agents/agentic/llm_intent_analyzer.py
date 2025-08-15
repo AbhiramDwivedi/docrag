@@ -118,6 +118,10 @@ Examples:
 - "what file types do we have" -> METADATA_QUERY
 - "find budget document" -> DOCUMENT_DISCOVERY
 - "summarize the report" -> CONTENT_ANALYSIS
+- "what does AWS stand for" -> CONTENT_ANALYSIS
+- "what is GCP" -> CONTENT_ANALYSIS
+- "define machine learning" -> CONTENT_ANALYSIS
+- "explain the concept of" -> CONTENT_ANALYSIS
 
 Respond with JSON:
 {{
@@ -200,9 +204,9 @@ Respond with JSON:
         elif any(term in query_lower for term in ["find", "locate", "get", "where is"]):
             intent = QueryIntent.DOCUMENT_DISCOVERY  
             confidence = 0.6
-        elif any(term in query_lower for term in ["analyze", "summarize", "what", "content"]):
+        elif any(term in query_lower for term in ["what does", "what is", "define", "explain", "stands for", "mean", "meaning", "definition", "analyze", "summarize", "content"]):
             intent = QueryIntent.CONTENT_ANALYSIS
-            confidence = 0.6
+            confidence = 0.7
         elif any(term in query_lower for term in ["compare", "difference", "similar"]):
             intent = QueryIntent.COMPARISON
             confidence = 0.6

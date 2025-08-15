@@ -2,11 +2,25 @@
 
 from typing import Dict, Any, List
 import logging
+import json
+from collections import Counter
 
 from .base_agent import BaseAgent
 from .execution_plan import ExecutionStep, StepResult, StepType
 from .context import AgentContext
 from ..registry import PluginRegistry
+
+# Try to import OpenAI for synthesis
+try:
+    from shared.config import settings
+    from openai import OpenAI
+except ImportError:
+    try:
+        from src.shared.config import settings
+        from openai import OpenAI
+    except ImportError:
+        settings = None
+        OpenAI = None
 
 logger = logging.getLogger(__name__)
 
@@ -338,13 +352,83 @@ class AnalysisAgent(BaseAgent):
     
     def _process_extraction_results(self, result: Dict[str, Any], 
                                   step: ExecutionStep, context: AgentContext) -> Dict[str, Any]:
-        """Process content extraction results."""
+        """Process content extraction results with OpenAI synthesis."""
+        raw_content = result.get("response", "")
+        query = step.parameters.get("query", context.query)
+        
+        # If we have content and OpenAI is available, synthesize an answer
+        if raw_content and OpenAI and settings and settings.openai_api_key:
+            try:
+                synthesized_response = self._synthesize_answer_with_openai(raw_content, query)
+                if synthesized_response:
+                    # Return synthesized answer instead of raw content
+                    return {
+                        "content": synthesized_response,
+                        "raw_content": raw_content,
+                        "sources": self._extract_sources_from_response(raw_content),
+                        "extraction_type": step.parameters.get("extraction_type", "general"),
+                        "query": query,
+                        "synthesized": True
+                    }
+            except Exception as e:
+                self.agent_logger.warning(f"OpenAI synthesis failed: {e}, falling back to raw content")
+        
+        # Fallback to raw content if synthesis fails or isn't available
         return {
-            "content": result.get("response", ""),
-            "sources": self._extract_sources_from_response(result.get("response", "")),
+            "content": raw_content,
+            "sources": self._extract_sources_from_response(raw_content),
             "extraction_type": step.parameters.get("extraction_type", "general"),
-            "query": step.parameters.get("query", context.query)
+            "query": query,
+            "synthesized": False
         }
+    
+    def _synthesize_answer_with_openai(self, content: str, query: str) -> str:
+        """Use OpenAI to synthesize a direct answer from the document content.
+        
+        Args:
+            content: Raw document content from semantic search
+            query: Original user query
+            
+        Returns:
+            Synthesized answer or empty string if synthesis fails
+        """
+        try:
+            # Initialize OpenAI client
+            client = OpenAI(api_key=settings.openai_api_key)
+            
+            # Create synthesis prompt
+            prompt = f"""Based on the following document content, please provide a direct answer to the user's question.
+
+User Question: "{query}"
+
+Document Content:
+{content}
+
+Instructions:
+- Provide a direct, concise answer to the question
+- Use information from the document content provided
+- If the answer is not in the content, say "The answer is not found in the provided documents"
+- Keep the response focused and relevant to the specific question asked
+- Do not list documents or sources in your answer
+
+Answer:"""
+
+            # Get synthesis from OpenAI
+            response = client.chat.completions.create(
+                model='gpt-4o-mini',
+                messages=[{'role': 'user', 'content': prompt}],
+                max_tokens=300,
+                temperature=0.1
+            )
+            
+            synthesized_answer = response.choices[0].message.content.strip()
+            self.agent_logger.info(f"Successfully synthesized answer with OpenAI: {synthesized_answer[:100]}...")
+            
+            return synthesized_answer
+            
+        except Exception as e:
+            self.agent_logger.error(f"OpenAI synthesis error: {e}")
+            return ""
     
     def _extract_decisions_from_content(self, result: Dict[str, Any], 
                                       context: AgentContext) -> List[Dict[str, Any]]:

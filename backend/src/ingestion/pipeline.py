@@ -14,10 +14,11 @@ from ingestion.storage.vector_store import VectorStore
 from ingestion.storage.knowledge_graph import KnowledgeGraph, KnowledgeGraphBuilder
 from shared.config import settings
 from shared.utils import get_file_hash
+from shared.entity_indexing import EntityExtractor, enhance_chunk_with_entities, create_entity_document_mapping
 from rich.progress import track
 
 
-def process_file(path: Path, store: VectorStore, kg: KnowledgeGraph):
+def process_file(path: Path, store: VectorStore, kg: KnowledgeGraph, entity_extractor: EntityExtractor = None):
     file_id = get_file_hash(path)
     units = extract_text(path)
     all_chunks, texts, meta = [], [], []
@@ -38,9 +39,30 @@ def process_file(path: Path, store: VectorStore, kg: KnowledgeGraph):
                             settings.chunk_size, settings.overlap)
         all_chunks.extend(chunks)
     
-    # Second pass: create metadata with proper chunk indexing
+    # Entity mappings for Phase 4 entity-aware indexing
+    all_entity_mappings = []
+    
+    # Second pass: create metadata with proper chunk indexing and entity extraction
     for chunk_index, ch in enumerate(all_chunks):
         texts.append(ch['text'])
+        
+        # Phase 4: Extract entities from chunk if enabled
+        if entity_extractor and entity_extractor.is_available() and getattr(settings, 'enable_entity_indexing', False):
+            try:
+                chunk_data = {'content': ch['text'], 'chunk_id': ch['id']}
+                enhanced_chunk = enhance_chunk_with_entities(chunk_data, entity_extractor)
+                
+                # Create entity mappings for database storage
+                if enhanced_chunk.get('entities'):
+                    entity_mappings = create_entity_document_mapping(
+                        enhanced_chunk['entities'],
+                        document_id,
+                        ch['id']
+                    )
+                    all_entity_mappings.extend(entity_mappings)
+            except Exception as e:
+                print(f"⚠️ Entity extraction failed for chunk {ch['id']}: {e}")
+        
         # Generate enhanced 13-field metadata format
         # Extract unit_id from chunk_id (format: file_hash_unit_chunk)
         chunk_parts = ch['id'].split('_')
@@ -90,6 +112,14 @@ def process_file(path: Path, store: VectorStore, kg: KnowledgeGraph):
     
     # Use enhanced upsert with metadata
     store.upsert_with_metadata([c['id'] for c in all_chunks], vectors, meta, file_metadata)
+    
+    # Phase 4: Store entity mappings if available
+    if all_entity_mappings and getattr(settings, 'enable_entity_indexing', False):
+        try:
+            store.store_entity_mappings(all_entity_mappings)
+            print(f"📝 Stored {len(all_entity_mappings)} entity mappings for {path.name}")
+        except Exception as e:
+            print(f"⚠️ Failed to store entity mappings for {path.name}: {e}")
 
 
 def main():
@@ -111,6 +141,20 @@ def main():
     kg_path = settings.resolve_storage_path(settings.knowledge_graph_path)
     kg = KnowledgeGraph(str(kg_path))
     print("🧠 Knowledge graph initialized")
+    
+    # Phase 4: Initialize entity extractor if enabled
+    entity_extractor = None
+    if getattr(settings, 'enable_entity_indexing', False):
+        try:
+            entity_extractor = EntityExtractor()
+            if entity_extractor.is_available():
+                print("🏷️ Entity extraction enabled for ingestion")
+            else:
+                print("⚠️ Entity extraction requested but spaCy not available")
+                entity_extractor = None
+        except Exception as e:
+            print(f"⚠️ Failed to initialize entity extractor: {e}")
+            entity_extractor = None
     
     # Get all files or filter by type
     if args.file_type:
@@ -134,7 +178,7 @@ def main():
         if '~$' in file.name:
             continue
         try:
-            process_file(file, store, kg)
+            process_file(file, store, kg, entity_extractor)
             processed_count += 1
         except Exception as e:
             print(f"❌ Failed to process {file.name}: {e}")
