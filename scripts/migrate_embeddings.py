@@ -64,7 +64,7 @@ class EmbeddingMigrator:
         backup_db = self.backup_dir / f"docmeta_{timestamp}.db"
         backup_vector = self.backup_dir / f"vector_{timestamp}.index"
         
-        rprint(f"📦 Creating backup...")
+        rprint(f"[blue]Creating backup...[/blue]")
         
         if self.db_path.exists():
             import shutil
@@ -73,7 +73,7 @@ class EmbeddingMigrator:
                 # Verify backup was created successfully
                 if not backup_db.exists() or backup_db.stat().st_size == 0:
                     raise RuntimeError(f"Database backup verification failed: {backup_db}")
-                rprint(f"   ✅ Database backed up to: {backup_db}")
+                rprint(f"   [green]Database backed up to: {backup_db}[/green]")
             except (OSError, shutil.Error) as e:
                 raise RuntimeError(f"Failed to create database backup: {e}")
         
@@ -84,7 +84,7 @@ class EmbeddingMigrator:
                 # Verify backup was created successfully
                 if not backup_vector.exists() or backup_vector.stat().st_size == 0:
                     raise RuntimeError(f"Vector index backup verification failed: {backup_vector}")
-                rprint(f"   ✅ Vector index backed up to: {backup_vector}")
+                rprint(f"   [green]Vector index backed up to: {backup_vector}[/green]")
             except (OSError, shutil.Error) as e:
                 raise RuntimeError(f"Failed to create vector index backup: {e}")
         
@@ -187,7 +187,7 @@ class EmbeddingMigrator:
     def get_chunk_data(self, start_id: int = 0) -> List[Tuple[int, str]]:
         """Get chunk text data from database starting from given ID."""
         if not self.db_path.exists():
-            rprint("❌ Database not found. Nothing to migrate.")
+            rprint("[red]Database not found. Nothing to migrate.[/red]")
             return []
             
         conn = sqlite3.connect(self.db_path)
@@ -223,7 +223,7 @@ class EmbeddingMigrator:
         progress = self.load_progress()
         
         if resume and progress.get("completed"):
-            rprint("✅ Migration already completed!")
+            rprint("[green]Migration already completed![/green]")
             return True
             
         if not resume:
@@ -255,7 +255,7 @@ class EmbeddingMigrator:
         # Load first batch to determine embedding dimension
         sample_chunks = self.get_chunk_data(progress["last_chunk_id"])
         if not sample_chunks:
-            rprint("✅ No more chunks to process!")
+            rprint("[green]No more chunks to process![/green]")
             progress["completed"] = True
             self.save_progress(progress)
             return True
@@ -308,7 +308,7 @@ class EmbeddingMigrator:
                     
                 except Exception as e:
                     self.logger.error(f"Error processing batch starting at chunk {progress['last_chunk_id']}: {e}")
-                    rprint(f"❌ Error: {e}")
+                    rprint(f"[red]Error: {e}[/red]")
                     return False
                     
                 # Check if we've processed all in this batch
@@ -328,7 +328,7 @@ class EmbeddingMigrator:
         progress["completed_at"] = time.time()
         self.save_progress(progress)
         
-        rprint("✅ Migration completed successfully!")
+        rprint("[green]Migration completed successfully![/green]")
         rprint(f"📈 Migrated {progress['processed_chunks']} chunks to {self.target_model}")
         
         return True
@@ -390,11 +390,11 @@ def main():
                 target_model = progress.get("target_model")
                 target_version = progress.get("target_version", "2.0.0")
         else:
-            rprint("❌ No previous migration found to resume")
+            rprint("[red]No previous migration found to resume[/red]")
             return 1
     else:
         if not args.model:
-            rprint("❌ Model name required for new migration")
+            rprint("[red]Model name required for new migration[/red]")
             rprint("Example: python scripts/migrate_embeddings.py --model intfloat/e5-base-v2")
             return 1
         target_model = args.model
@@ -414,10 +414,10 @@ def main():
         success = migrator.migrate_embeddings(resume=args.resume)
         return 0 if success else 1
     except KeyboardInterrupt:
-        rprint("\n⏸️  Migration interrupted. Use --resume to continue later.")
+        rprint("\n[yellow]Migration interrupted. Use --resume to continue later.[/yellow]")
         return 1
     except Exception as e:
-        rprint(f"❌ Migration failed: {e}")
+        rprint(f"[red]Migration failed: {e}[/red]")
         return 1
 
 if __name__ == "__main__":
