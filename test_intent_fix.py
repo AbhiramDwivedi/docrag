@@ -8,12 +8,12 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'backend', 'src'))
 
 def test_intent_classification():
-    """Test that 'What does STEP stand for?' is correctly classified as CONTENT_ANALYSIS."""
+    """Test that 'What does AWS stand for?' is correctly classified as CONTENT_ANALYSIS."""
     print("🧪 Testing Intent Classification Fix...")
     print("=" * 50)
     
     # Test the pattern matching logic directly
-    query = "What does STEP stand for?"
+    query = "What does AWS stand for?"
     query_lower = query.lower()
     
     print(f"Query: '{query}'")
@@ -55,7 +55,7 @@ if __name__ == "__main__":
     print("\n" + "=" * 50)
     if success:
         print("✅ Intent classification fix is working correctly!")
-        print("The query 'What does STEP stand for?' will now be classified as CONTENT_ANALYSIS")
+        print("The query 'What does AWS stand for?' will now be classified as CONTENT_ANALYSIS")
         print("instead of DOCUMENT_DISCOVERY, which should make it synthesize an answer.")
     else:
         print("❌ Intent classification fix failed!")

@@ -118,8 +118,8 @@ Examples:
 - "what file types do we have" -> METADATA_QUERY
 - "find budget document" -> DOCUMENT_DISCOVERY
 - "summarize the report" -> CONTENT_ANALYSIS
-- "what does STEP stand for" -> CONTENT_ANALYSIS
-- "what is AWS" -> CONTENT_ANALYSIS
+- "what does AWS stand for" -> CONTENT_ANALYSIS
+- "what is GCP" -> CONTENT_ANALYSIS
 - "define machine learning" -> CONTENT_ANALYSIS
 - "explain the concept of" -> CONTENT_ANALYSIS
 

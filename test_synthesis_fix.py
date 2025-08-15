@@ -12,15 +12,15 @@ def test_synthesis_prompt():
     print("🧪 Testing OpenAI Synthesis Logic...")
     print("=" * 50)
     
-    # Simulate the document content that would be found for "What does STEP stand for?"
+    # Simulate the document content that would be found for "What does AWS stand for?"
     sample_content = """
-    STEP is the Systematic Training and Evaluation Program used by the organization.
-    The program was established in 2019 to standardize training procedures.
-    STEP includes comprehensive modules for employee development and assessment.
-    All departments are required to implement STEP protocols for new hires.
+    AWS is Amazon Web Services, a comprehensive cloud computing platform provided by Amazon.
+    The platform was launched in 2006 to provide scalable cloud infrastructure services.
+    AWS includes compute power, database storage, content delivery and other functionality.
+    Many organizations use AWS for hosting applications and managing their IT infrastructure.
     """
     
-    query = "What does STEP stand for?"
+    query = "What does AWS stand for?"
     
     # Build the synthesis prompt
     prompt = f"""Based on the following document content, please provide a direct answer to the user's question.
@@ -46,14 +46,14 @@ Answer:"""
     print()
     
     # Expected response (simulated)
-    expected_answer = "STEP stands for Systematic Training and Evaluation Program."
+    expected_answer = "AWS stands for Amazon Web Services."
     
     print(f"📋 Expected Answer: '{expected_answer}'")
     print()
     print("✅ The synthesis prompt should now:")
     print("  1. Take the raw document content")
     print("  2. Use OpenAI to extract the direct answer") 
-    print("  3. Return 'STEP stands for...' instead of document list")
+    print("  3. Return 'AWS stands for...' instead of document list")
     print()
     print("🔧 Key Fix: Added _synthesize_answer_with_openai() method")
     print("   This method was missing from the content analysis pipeline!")
