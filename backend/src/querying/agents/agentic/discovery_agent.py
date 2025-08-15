@@ -85,23 +85,35 @@ class DiscoveryAgent(BaseAgent):
         self.agent_logger.info("Executing document discovery")
         
         try:
-            # Get metadata plugin for document discovery
-            metadata_plugin = self.registry.get_plugin("metadata")
-            if not metadata_plugin:
-                return self._create_failure_result(
-                    step, "Metadata plugin not available for document discovery"
-                )
-            
-            # Prepare parameters for metadata search
+            # Prepare parameters for search
             search_params = self._prepare_discovery_params(step, context)
             
-            # Execute metadata search
-            if not metadata_plugin.validate_params(search_params):
+            # Determine which plugin to use based on operation
+            operation = search_params.get("operation", "metadata")
+            if operation == "semantic_search":
+                plugin = self.registry.get_plugin("semantic_search")
+                plugin_name = "semantic search"
+            else:
+                plugin = self.registry.get_plugin("metadata")
+                plugin_name = "metadata"
+            
+            if not plugin:
                 return self._create_failure_result(
-                    step, "Invalid parameters for metadata search"
+                    step, f"{plugin_name.title()} plugin not available for document discovery"
                 )
             
-            result = metadata_plugin.execute(search_params)
+            # Execute search
+            if not plugin.validate_params(search_params):
+                return self._create_failure_result(
+                    step, f"Invalid parameters for {plugin_name} search"
+                )
+            
+            result = plugin.execute(search_params)
+            
+            # Debug logging
+            self.agent_logger.info(f"Plugin result keys: {result.keys() if result else 'None'}")
+            if result and "sources" in result:
+                self.agent_logger.info(f"Found {len(result['sources'])} sources in plugin result")
             
             # Process and store results
             discovered_docs = self._process_discovery_results(result, context)
@@ -299,9 +311,14 @@ class DiscoveryAgent(BaseAgent):
             # Use semantic search for conceptual queries
             params = {
                 "operation": "semantic_search",
-                "query": query,
+                "question": query,
                 "count": 50
             }
+            
+            # Enable hybrid search for entity queries (names, places, etc.)
+            if self._should_use_hybrid_search(query):
+                params["force_hybrid"] = True
+                self.agent_logger.debug(f"Enabling hybrid search for entity query: {query}")
         
         # Merge with any specific parameters from the step
         params.update(base_params)
@@ -349,6 +366,53 @@ class DiscoveryAgent(BaseAgent):
         # If none of these patterns match, assume it's a conceptual query
         return False
     
+    def _should_use_hybrid_search(self, query: str) -> bool:
+        """Determine if query should use hybrid search for better entity/name recall.
+        
+        Args:
+            query: Natural language query
+            
+        Returns:
+            True if query likely contains entities or proper names that would benefit from lexical search
+        """
+        query_lower = query.lower()
+        
+        # Patterns that suggest entity/proper noun queries
+        entity_indicators = [
+            # Question patterns about entities
+            "what do we know about",
+            "tell me about",
+            "information about",
+            "details about",
+            "who is",
+            "what is",
+            # Proper noun patterns (capitalized words in queries)
+            r'\b[A-Z][a-z]+\b',  # Capitalized words like "Hubli", "Amazon", etc.
+        ]
+        
+        # Check for entity indicator patterns
+        for indicator in entity_indicators:
+            if isinstance(indicator, str):
+                if indicator in query_lower:
+                    return True
+            else:
+                # Regex pattern
+                import re
+                if re.search(indicator, query):
+                    return True
+        
+        # Check if query contains capitalized words (likely proper nouns)
+        import re
+        capitalized_words = re.findall(r'\b[A-Z][a-z]+\b', query)
+        if len(capitalized_words) > 0:
+            # Exclude common question words and general terms
+            common_words = {'What', 'Who', 'Where', 'When', 'Why', 'How', 'The', 'This', 'That', 'These', 'Those'}
+            proper_nouns = [word for word in capitalized_words if word not in common_words]
+            if proper_nouns:
+                return True
+        
+        return False
+    
     def _extract_search_term(self, query: str) -> str:
         """Extract the actual search term from a natural language query.
         
@@ -394,10 +458,10 @@ class DiscoveryAgent(BaseAgent):
     
     def _process_discovery_results(self, result: Dict[str, Any], 
                                  context: AgentContext) -> List[Dict[str, Any]]:
-        """Process metadata plugin results into structured document information.
+        """Process plugin results into structured document information.
         
         Args:
-            result: Raw result from metadata plugin
+            result: Raw result from semantic search or metadata plugin
             context: AgentContext for additional processing
             
         Returns:
@@ -405,7 +469,22 @@ class DiscoveryAgent(BaseAgent):
         """
         discovered_docs = []
         
-        # First try to extract from structured data response
+        # First check if this is a semantic search result (has 'sources' field)
+        if "sources" in result and result["sources"]:
+            # Process semantic search results
+            for source in result["sources"]:
+                discovered_docs.append({
+                    "path": source.get("file", source.get("document_path", "")),
+                    "name": source.get("document_title", self._extract_filename(source.get("file", ""))),
+                    "source": "semantic_search",
+                    "unit": source.get("unit", ""),
+                    "similarity": source.get("similarity", 0.0),
+                    "distance": source.get("distance", 1.0),
+                    "chunk_index": source.get("chunk_index", 0)
+                })
+            return discovered_docs
+        
+        # Handle metadata plugin structured data response
         data = result.get("data", {})
         if data and "files" in data:
             # Use structured file data from metadata plugin

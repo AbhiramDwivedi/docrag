@@ -212,6 +212,36 @@ class VectorStore:
         cur.execute("CREATE INDEX IF NOT EXISTS idx_chunk_id ON entity_mappings (chunk_id)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_entity_label ON entity_mappings (entity_label)")
         
+        # Phase 2: FTS5 full-text search index for lexical search
+        try:
+            cur.execute("""
+                CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
+                    chunk_id UNINDEXED,
+                    content,
+                    file_path UNINDEXED
+                )
+            """)
+            
+            # Check if FTS5 table is empty and needs to be populated
+            cur.execute("SELECT COUNT(*) FROM chunks_fts")
+            fts_count = cur.fetchone()[0]
+            
+            if fts_count == 0:
+                # Populate FTS5 table with existing chunks
+                cur.execute("""
+                    INSERT INTO chunks_fts (chunk_id, content, file_path)
+                    SELECT id, text, COALESCE(document_path, file) 
+                    FROM chunks 
+                    WHERE current = 1
+                """)
+                print(f"Populated FTS5 index with existing chunks")
+                
+        except sqlite3.OperationalError as e:
+            if "no such module: fts5" in str(e).lower():
+                print("Warning: SQLite FTS5 module not available. Lexical search will be disabled.")
+            else:
+                raise e
+        
         self.conn.commit()
 
     def upsert(self, chunk_ids: List[str], vectors: Any, metadata_rows: List[Tuple]):
@@ -231,6 +261,8 @@ class VectorStore:
         
         # Update metadata with FAISS indices
         cur = self.conn.cursor()
+        fts_data = []  # Collect data for FTS5 batch insert
+        
         for i, row in enumerate(metadata_rows):
             # Support both legacy and new formats for backward compatibility
             if len(row) == 6:
@@ -238,14 +270,28 @@ class VectorStore:
                 # Extend with FAISS index and default document fields
                 extended_row = row + (current_size + i, None, None, None, None, None, None, None)
                 cur.execute("REPLACE INTO chunks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", extended_row)
+                # Collect for FTS5: (chunk_id, content, file_path)
+                fts_data.append((row[0], row[3], row[1]))
             elif len(row) == 13:
                 # New format: (id, file, unit, text, mtime, current, document_id, document_path, 
                 #             document_title, section_id, chunk_index, total_chunks, document_type)
                 # Insert with FAISS index in the correct position (after current, before document_id)
                 extended_row = row[:6] + (current_size + i,) + row[6:]
                 cur.execute("REPLACE INTO chunks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", extended_row)
+                # Collect for FTS5: (chunk_id, content, file_path)
+                fts_data.append((row[0], row[3], row[7]))  # row[7] is document_path
             else:
                 raise ValueError(f"Invalid metadata row length: {len(row)}. Expected 6 or 13 fields.")
+        
+        # Update FTS5 index if it exists
+        try:
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='chunks_fts'")
+            if cur.fetchone():
+                # FTS5 table exists, populate it
+                cur.executemany("REPLACE INTO chunks_fts (chunk_id, content, file_path) VALUES (?, ?, ?)", fts_data)
+        except sqlite3.OperationalError:
+            # FTS5 table doesn't exist or FTS5 not available
+            pass
         
         self.conn.commit()
         faiss.write_index(self.index, str(self.index_path))

@@ -162,9 +162,13 @@ class SemanticSearchPlugin(Plugin):
             
             # Initialize vector store if needed
             if self._vector_store is None:
+                # Use 768 dimensions for E5 model (intfloat/e5-base-v2)
+                # TODO: Auto-detect dimension from model or index
+                vector_dim = 768 if settings.embed_model == "intfloat/e5-base-v2" else 384
                 self._vector_store = VectorStore.load(
                     Path(settings.vector_path), 
-                    Path(settings.db_path)
+                    Path(settings.db_path),
+                    dim=vector_dim
                 )
             
             # Get query embedding for MMR (using original question, not expanded variants)
@@ -284,23 +288,65 @@ class SemanticSearchPlugin(Plugin):
             # Stage 4: MMR Selection for diverse results
             final_results = initial_results
             if enable_mmr and len(initial_results) > mmr_k:
-                if settings.enable_debug_logging:
-                    logger.info(f"Starting MMR selection: {len(initial_results)} -> {mmr_k} with lambda={mmr_lambda}")
+                # Adjust MMR parameters for hybrid search to preserve lexical matches
+                adjusted_lambda = mmr_lambda
+                if use_hybrid:
+                    # For hybrid search, favor relevance over diversity to preserve lexical matches
+                    adjusted_lambda = min(0.9, mmr_lambda + 0.2)  # Increase toward relevance
+                    if settings.enable_debug_logging:
+                        logger.info(f"Adjusting MMR lambda for hybrid search: {mmr_lambda} -> {adjusted_lambda}")
                 
-                # Get embeddings for MMR selection
-                candidate_embeddings = extract_embeddings_from_results(
-                    initial_results, 
-                    lambda texts: embed_texts(texts, settings.embed_model)
-                )
+                # For entity queries with hybrid search, preserve top lexical matches
+                preserve_top_k = 0
+                if use_hybrid and query_analysis.get("likely_entity_query", False):
+                    # Preserve top 5 hybrid results (likely lexical matches) before MMR
+                    preserve_top_k = min(5, mmr_k // 2)
+                    if settings.enable_debug_logging:
+                        logger.info(f"Preserving top {preserve_top_k} hybrid results for entity query")
                 
-                # Apply MMR selection
-                final_results = mmr_selection(
-                    query_embedding=q_vec,
-                    candidate_embeddings=candidate_embeddings,
-                    candidate_results=initial_results,
-                    mmr_lambda=mmr_lambda,
-                    k=mmr_k
-                )
+                if preserve_top_k > 0:
+                    # Split into preserved and MMR-selected results
+                    preserved_results = initial_results[:preserve_top_k]
+                    remaining_results = initial_results[preserve_top_k:]
+                    remaining_k = mmr_k - preserve_top_k
+                    
+                    if remaining_k > 0 and remaining_results:
+                        # Apply MMR to remaining results
+                        candidate_embeddings = extract_embeddings_from_results(
+                            remaining_results, 
+                            lambda texts: embed_texts(texts, settings.embed_model)
+                        )
+                        
+                        mmr_selected = mmr_selection(
+                            query_embedding=q_vec,
+                            candidate_embeddings=candidate_embeddings,
+                            candidate_results=remaining_results,
+                            mmr_lambda=adjusted_lambda,
+                            k=remaining_k
+                        )
+                        
+                        final_results = preserved_results + mmr_selected
+                    else:
+                        final_results = preserved_results
+                else:
+                    # Standard MMR selection
+                    if settings.enable_debug_logging:
+                        logger.info(f"Starting MMR selection: {len(initial_results)} -> {mmr_k} with lambda={adjusted_lambda}")
+                    
+                    # Get embeddings for MMR selection
+                    candidate_embeddings = extract_embeddings_from_results(
+                        initial_results, 
+                        lambda texts: embed_texts(texts, settings.embed_model)
+                    )
+                    
+                    # Apply MMR selection
+                    final_results = mmr_selection(
+                        query_embedding=q_vec,
+                        candidate_embeddings=candidate_embeddings,
+                        candidate_results=initial_results,
+                        mmr_lambda=adjusted_lambda,
+                        k=mmr_k
+                    )
                 
                 if settings.enable_debug_logging:
                     logger.info(f"MMR selection completed: {len(final_results)} results selected")
@@ -454,7 +500,16 @@ Answer:"""
                 from .lexical_search import LexicalSearchPlugin
                 self._lexical_plugin = LexicalSearchPlugin()
             
-            lexical_raw_results = self._lexical_plugin.search_raw(question, k)
+            # For lexical search, use detected entities instead of full question
+            # This improves recall by searching for key terms rather than full questions
+            lexical_query = question
+            if query_analysis.get("detected_entities"):
+                # Use detected entities for better lexical search results
+                lexical_query = " ".join(query_analysis["detected_entities"])
+                if settings.enable_debug_logging:
+                    logger.info(f"Using entities for lexical search: '{lexical_query}' (from: '{question}')")
+            
+            lexical_raw_results = self._lexical_plugin.search_raw(lexical_query, k)
             
             if settings.enable_debug_logging:
                 logger.info(f"Lexical component returned {len(lexical_raw_results)} results")
@@ -504,20 +559,20 @@ Answer:"""
             
             for chunk_id, lexical_score in lexical_results:
                 cursor.execute("""
-                    SELECT c.content, c.file_path, c.chunk_index, c.chunk_id,
-                           f.file_name, f.document_title, f.document_id
+                    SELECT c.text, c.file, c.chunk_index, c.id,
+                           f.file_name, c.document_title, c.document_id
                     FROM chunks c
-                    LEFT JOIN files f ON c.file_path = f.file_path
-                    WHERE c.chunk_id = ? AND c.current = 1
+                    LEFT JOIN files f ON c.file = f.file_path
+                    WHERE c.id = ? AND c.current = 1
                 """, (chunk_id,))
                 
                 row = cursor.fetchone()
                 if row:
-                    content, file_path, chunk_index, chunk_id, file_name, doc_title, doc_id = row
+                    text_content, file_path, chunk_index, chunk_id, file_name, doc_title, doc_id = row
                     
                     converted_results.append({
-                        "chunk_id": chunk_id,
-                        "text": content,
+                        "id": chunk_id,
+                        "text": text_content,
                         "file": file_path,
                         "file_path": file_path,
                         "chunk_index": chunk_index,
@@ -551,8 +606,8 @@ Answer:"""
             Merged and deduplicated results sorted by hybrid score
         """
         # Convert to format expected by merge_search_results
-        semantic_tuples = [(r.get("chunk_id", ""), r.get("similarity", 0.0)) for r in semantic_results]
-        lexical_tuples = [(r.get("chunk_id", ""), r.get("similarity", 0.0)) for r in lexical_results]
+        semantic_tuples = [(r.get("id", ""), r.get("similarity", 0.0)) for r in semantic_results]
+        lexical_tuples = [(r.get("id", ""), r.get("similarity", 0.0)) for r in lexical_results]
         
         # Get weights from config
         dense_weight = getattr(settings, 'hybrid_dense_weight', 0.6)
@@ -567,6 +622,12 @@ Answer:"""
         elif strategy == "semantic_primary":
             dense_weight = 0.8
             lexical_weight = 0.2
+        elif query_analysis.get("likely_entity_query", False):
+            # For entity queries, favor lexical search since entities are exact matches
+            dense_weight = 0.3
+            lexical_weight = 0.7
+            if settings.enable_debug_logging:
+                logger.info(f"Adjusting weights for entity query: dense={dense_weight}, lexical={lexical_weight}")
         
         # Merge scores
         merged_scores = merge_search_results(
@@ -575,8 +636,8 @@ Answer:"""
         )
         
         # Create lookup maps for full result data
-        semantic_map = {r.get("chunk_id", ""): r for r in semantic_results}
-        lexical_map = {r.get("chunk_id", ""): r for r in lexical_results}
+        semantic_map = {r.get("id", ""): r for r in semantic_results}
+        lexical_map = {r.get("id", ""): r for r in lexical_results}
         
         # Build final merged results with full data
         merged_results = []
