@@ -1,6 +1,6 @@
 """Analysis agent for content analysis and extraction operations."""
 
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Union
 import logging
 import json
 from collections import Counter
@@ -113,8 +113,11 @@ class AnalysisAgent(BaseAgent):
                     step, "Semantic search plugin not available for content extraction"
                 )
             
-            # Prepare parameters for content extraction
-            search_params = self._prepare_extraction_params(step, context)
+            # Prepare parameters for content extraction with validation
+            try:
+                search_params = self._prepare_extraction_params(step, context)
+            except ValueError as e:
+                return self._create_failure_result(step, f"Invalid extraction parameters: {e}")
             
             # Execute semantic search
             if not semantic_plugin.validate_params(search_params):
@@ -177,20 +180,29 @@ class AnalysisAgent(BaseAgent):
                     step, "No target documents available for content filtering"
                 )
             
-            # Prepare semantic search parameters with target documents
-            query = step.parameters.get("query", context.query)
-            max_documents = step.parameters.get("max_documents", 10)
-            k = step.parameters.get("k", 50)
+            # Validate and sanitize parameters
+            try:
+                query = self._validate_query_parameter(step.parameters.get("query", context.query))
+                max_documents = self._validate_count_parameter(step.parameters.get("max_documents", 10))
+                k = self._validate_count_parameter(step.parameters.get("k", 50))
+            except ValueError as e:
+                return self._create_failure_result(step, f"Invalid parameter: {e}")
+            
+            # Validate and sanitize target documents
+            try:
+                target_doc_paths = self._validate_target_documents(target_docs)
+            except ValueError as e:
+                return self._create_failure_result(step, f"Invalid target documents: {e}")
             
             search_params = {
                 "question": query,
-                "target_docs": [doc.get("path", doc.get("file_path", "")) for doc in target_docs],
-                "k": min(k, len(target_docs)),
+                "target_docs": target_doc_paths,
+                "k": min(k, len(target_doc_paths)),
                 "max_documents": max_documents
             }
             
             self.agent_logger.debug(f"Content analysis parameters: query='{query}', "
-                                  f"target_docs={len(target_docs)}, max_documents={max_documents}")
+                                  f"target_docs={len(target_doc_paths)}, max_documents={max_documents}")
             
             # Execute semantic search with restricted document set
             if not semantic_plugin.validate_params(search_params):
@@ -216,7 +228,7 @@ class AnalysisAgent(BaseAgent):
                 {
                     "filtered_content": filtered_content,
                     "search_params": search_params,
-                    "target_docs_count": len(target_docs),
+                    "target_docs_count": len(target_doc_paths),
                     "final_count": len(filtered_content.get('sources', [])),
                     "raw_response": result.get("response", "")
                 },
@@ -385,24 +397,45 @@ class AnalysisAgent(BaseAgent):
     # Helper methods for parameter preparation and result processing
     
     def _prepare_extraction_params(self, step: ExecutionStep, context: AgentContext) -> Dict[str, Any]:
-        """Prepare parameters for content extraction."""
+        """Prepare parameters for content extraction with validation."""
         base_params = step.parameters.copy()
+        
+        # Validate query parameter
+        query = self._validate_query_parameter(base_params.get("query", context.query))
         
         # Use target documents if specified
         target_docs = base_params.get("target_docs", context.get_discovered_paths())
         
         params = {
-            "question": base_params.get("query", context.query),
+            "question": query,
             "use_document_level": True,
             "k": 50,
             "max_documents": len(target_docs) if target_docs else 5
         }
         
-        # If we have specific documents, focus search on them
+        # If we have specific documents, validate and focus search on them
         if target_docs:
-            params["target_documents"] = target_docs
+            if isinstance(target_docs, list) and len(target_docs) > 0:
+                # Validate target document paths
+                validated_paths = []
+                for doc in target_docs:
+                    if isinstance(doc, str):
+                        validated_paths.append(doc)
+                    elif isinstance(doc, dict):
+                        path = doc.get("path", doc.get("file_path", ""))
+                        if path:
+                            validated_paths.append(path)
+                
+                if validated_paths:
+                    params["target_documents"] = validated_paths
         
-        params.update(base_params)
+        # Validate and update other parameters
+        for key, value in base_params.items():
+            if key in ["k", "max_documents"] and value is not None:
+                params[key] = self._validate_count_parameter(value)
+            elif key not in ["query", "target_docs"]:  # Already processed
+                params[key] = value
+        
         return params
     
     def _prepare_decision_analysis_params(self, step: ExecutionStep, context: AgentContext) -> Dict[str, Any]:
@@ -704,11 +737,14 @@ Answer:"""
         
         sources = result["sources"]
         
-        # Ensure stable ordering: similarity desc, then path asc for ties
-        # Assuming sources are already sorted by similarity desc from semantic search
+        # Ensure stable ordering with multiple sort keys for full determinism:
+        # 1. Similarity score (desc) - primary relevance ranking
+        # 2. File path (asc) - consistent ordering for ties 
+        # 3. Content hash or chunk index (asc) - final tie-breaker for identical documents
         sorted_sources = sorted(sources, key=lambda x: (
             -x.get("similarity", 0),  # Negative for desc order
-            x.get("file_path", x.get("path", ""))  # Path ascending for ties
+            x.get("file_path", x.get("path", "")),  # Path ascending for first tie-breaker
+            x.get("chunk_index", x.get("id", str(hash(x.get("content", "")))))  # Final tie-breaker
         ))
         
         # Clip to requested count
@@ -720,3 +756,113 @@ Answer:"""
             "total_candidates": len(sources),
             "final_count": len(final_sources)
         }
+    
+    # Security validation helper methods
+    
+    def _validate_query_parameter(self, query: str) -> str:
+        """Validate and sanitize query parameter to prevent injection attacks.
+        
+        Args:
+            query: User-provided query string
+            
+        Returns:
+            Sanitized query string
+            
+        Raises:
+            ValueError: If query is invalid or dangerous
+        """
+        if not query or not isinstance(query, str):
+            raise ValueError("Query must be a non-empty string")
+        
+        # Remove potential dangerous characters and limit length
+        query = query.strip()
+        if len(query) > 1000:  # Reasonable limit
+            raise ValueError("Query too long (max 1000 characters)")
+        
+        # Check for potential SQL injection patterns (basic protection)
+        dangerous_patterns = [
+            '--', ';', 'DROP', 'DELETE', 'UPDATE', 'INSERT', 'EXEC',
+            'UNION', 'SELECT', 'CREATE', 'ALTER', '<script', 'javascript:'
+        ]
+        
+        query_upper = query.upper()
+        for pattern in dangerous_patterns:
+            if pattern in query_upper:
+                raise ValueError(f"Query contains potentially dangerous pattern: {pattern}")
+        
+        return query
+    
+    def _validate_count_parameter(self, count: Any) -> int:
+        """Validate count parameter to prevent resource abuse.
+        
+        Args:
+            count: Count parameter from user input
+            
+        Returns:
+            Validated count as integer
+            
+        Raises:
+            ValueError: If count is invalid
+        """
+        if not isinstance(count, (int, float, str)):
+            raise ValueError("Count must be a number")
+        
+        try:
+            count_int = int(count)
+        except (ValueError, TypeError):
+            raise ValueError("Count must be a valid integer")
+        
+        if count_int < 1:
+            raise ValueError("Count must be positive")
+        
+        if count_int > 1000:  # Prevent excessive resource usage
+            raise ValueError("Count too large (max 1000)")
+        
+        return count_int
+    
+    def _validate_target_documents(self, target_docs: List[Dict[str, Any]]) -> List[str]:
+        """Validate and sanitize target document paths.
+        
+        Args:
+            target_docs: List of document metadata dictionaries
+            
+        Returns:
+            List of validated document paths
+            
+        Raises:
+            ValueError: If document paths are invalid
+        """
+        if not target_docs or not isinstance(target_docs, list):
+            raise ValueError("Target documents must be a non-empty list")
+        
+        if len(target_docs) > 1000:  # Prevent excessive processing
+            raise ValueError("Too many target documents (max 1000)")
+        
+        validated_paths = []
+        
+        for i, doc in enumerate(target_docs):
+            if not isinstance(doc, dict):
+                raise ValueError(f"Document {i} must be a dictionary")
+            
+            # Extract path with fallback options
+            path = doc.get("path") or doc.get("file_path") or ""
+            
+            if not path or not isinstance(path, str):
+                raise ValueError(f"Document {i} missing valid path")
+            
+            path = path.strip()
+            if not path:
+                raise ValueError(f"Document {i} has empty path")
+            
+            # Basic path traversal protection
+            if '..' in path or path.startswith('/'):
+                # Allow absolute paths but log for security monitoring
+                self.agent_logger.warning(f"Absolute path detected in document: {path}")
+            
+            # Prevent extremely long paths
+            if len(path) > 500:
+                raise ValueError(f"Document path too long: {path[:50]}...")
+            
+            validated_paths.append(path)
+        
+        return validated_paths
