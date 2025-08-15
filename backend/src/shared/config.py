@@ -100,9 +100,68 @@ class Settings(BaseModel):
     @field_validator('cross_encoder_top_k')
     @classmethod
     def validate_cross_encoder_top_k(cls, v: int, info: ValidationInfo) -> int:
-        """Ensure cross_encoder_top_k is reasonable."""
+        """Ensure cross_encoder_top_k is a positive integer and reasonable."""
+        if v <= 0:
+            raise ValueError(f"cross_encoder_top_k ({v}) must be a positive integer")
         if 'retrieval_k' in info.data and v > info.data['retrieval_k']:
             raise ValueError(f"cross_encoder_top_k ({v}) cannot be greater than retrieval_k ({info.data['retrieval_k']})")
+        return v
+
+    @field_validator('openai_api_key')
+    @classmethod
+    def validate_openai_api_key(cls, v: Optional[str]) -> Optional[str]:
+        """Validate OpenAI API key security."""
+        if v is None:
+            return v
+        
+        # Check for placeholder values
+        placeholder_values = {
+            "your-openai-api-key-here",
+            "sk-placeholder", 
+            "change-me",
+            "your-key-here"
+        }
+        
+        if v.lower() in {p.lower() for p in placeholder_values}:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning("OpenAI API key appears to be a placeholder value")
+            return v
+        
+        # Basic format validation - OpenAI keys start with 'sk-'
+        if v and not v.startswith('sk-'):
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning("OpenAI API key does not follow expected format (should start with 'sk-')")
+        
+        # Check for obviously insecure values
+        if v and len(v) < 20:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning("OpenAI API key appears too short to be valid")
+        
+        return v
+
+    @field_validator('cross_encoder_model')
+    @classmethod
+    def validate_cross_encoder_model(cls, v: str) -> str:
+        """Validate cross-encoder model name."""
+        if not v or not isinstance(v, str):
+            raise ValueError("cross_encoder_model must be a non-empty string")
+        
+        # Log warning if using untested models
+        known_models = {
+            "ms-marco-MiniLM-L-6-v2",
+            "ms-marco-MiniLM-L-12-v2", 
+            "cross-encoder/ms-marco-MiniLM-L-6-v2",
+            "cross-encoder/ms-marco-MiniLM-L-12-v2"
+        }
+        
+        if v not in known_models:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"Using untested cross-encoder model: {v}")
+        
         return v
 
     @field_validator('sync_root', mode='before')

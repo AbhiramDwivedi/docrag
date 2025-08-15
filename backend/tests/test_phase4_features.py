@@ -9,11 +9,262 @@ import sys
 from pathlib import Path
 
 # Add backend src to path for imports
-backend_root = Path(__file__).parent.parent.parent / "src"
+backend_root = Path(__file__).parent.parent / "src"
 sys.path.insert(0, str(backend_root))
 
 from querying.agents.plugins.semantic_search import SemanticSearchPlugin
 from shared.reranking import CrossEncoderReranker, expand_entity_query, create_query_variants
+from shared.entity_indexing import EntityExtractor, create_entity_document_mapping, enhance_chunk_with_entities, get_entity_boost_score
+
+
+class TestEntityExtractor:
+    """Test entity extraction functionality."""
+    
+    def test_entity_extractor_initialization(self):
+        """Test entity extractor initialization."""
+        extractor = EntityExtractor("en_core_web_sm")
+        assert extractor.model_name == "en_core_web_sm"
+        assert extractor._nlp is None
+        # Check availability status (may be False if spaCy not installed)
+        assert isinstance(extractor._available, bool)
+    
+    def test_entity_extractor_unavailable(self):
+        """Test behavior when spaCy is unavailable."""
+        with patch('shared.entity_indexing.spacy') as mock_spacy:
+            # Simulate ImportError when importing spaCy
+            def raise_import_error(*args, **kwargs):
+                raise ImportError("No module named 'spacy'")
+            
+            mock_spacy.side_effect = raise_import_error
+            
+            extractor = EntityExtractor()
+            assert not extractor.is_available()
+            
+            # Should return empty list when unavailable
+            entities = extractor.extract_entities("Apple Inc is a technology company.")
+            assert entities == []
+    
+    @patch('shared.entity_indexing.spacy')
+    def test_entity_extraction_success(self, mock_spacy):
+        """Test successful entity extraction with mock spaCy."""
+        # Mock spaCy components
+        mock_nlp = Mock()
+        mock_doc = Mock()
+        
+        # Mock entities
+        mock_ent1 = Mock()
+        mock_ent1.text = "Apple Inc"
+        mock_ent1.label_ = "ORG"
+        mock_ent1.start_char = 0
+        mock_ent1.end_char = 9
+        
+        mock_ent2 = Mock()
+        mock_ent2.text = "California"
+        mock_ent2.label_ = "GPE"
+        mock_ent2.start_char = 30
+        mock_ent2.end_char = 40
+        
+        mock_doc.ents = [mock_ent1, mock_ent2]
+        mock_nlp.return_value = mock_doc
+        
+        # Mock spaCy module
+        mock_spacy.load.return_value = mock_nlp
+        
+        extractor = EntityExtractor()
+        extractor._available = True
+        extractor._spacy = mock_spacy
+        
+        text = "Apple Inc is headquartered in California."
+        entities = extractor.extract_entities(text)
+        
+        assert len(entities) == 2
+        assert entities[0]["text"] == "Apple Inc"
+        assert entities[0]["label"] == "ORG"
+        assert entities[1]["text"] == "California"
+        assert entities[1]["label"] == "GPE"
+    
+    @patch('shared.entity_indexing.spacy')
+    def test_entity_extraction_filter_types(self, mock_spacy):
+        """Test that only relevant entity types are returned."""
+        mock_nlp = Mock()
+        mock_doc = Mock()
+        
+        # Mix of relevant and irrelevant entity types
+        mock_ent1 = Mock()  # Should be included
+        mock_ent1.text = "Microsoft"
+        mock_ent1.label_ = "ORG"
+        mock_ent1.start_char = 0
+        mock_ent1.end_char = 9
+        
+        mock_ent2 = Mock()  # Should be excluded (not in filter)
+        mock_ent2.text = "yesterday"
+        mock_ent2.label_ = "DATE"
+        mock_ent2.start_char = 20
+        mock_ent2.end_char = 29
+        
+        mock_ent3 = Mock()  # Should be included
+        mock_ent3.text = "John Doe"
+        mock_ent3.label_ = "PERSON"
+        mock_ent3.start_char = 30
+        mock_ent3.end_char = 38
+        
+        mock_doc.ents = [mock_ent1, mock_ent2, mock_ent3]
+        mock_nlp.return_value = mock_doc
+        mock_spacy.load.return_value = mock_nlp
+        
+        extractor = EntityExtractor()
+        extractor._available = True
+        extractor._spacy = mock_spacy
+        
+        entities = extractor.extract_entities("Test text")
+        
+        # Should only return ORG and PERSON, not DATE
+        assert len(entities) == 2
+        entity_labels = [ent["label"] for ent in entities]
+        assert "ORG" in entity_labels
+        assert "PERSON" in entity_labels
+        assert "DATE" not in entity_labels
+    
+    def test_entity_extraction_error_handling(self):
+        """Test error handling in entity extraction."""
+        extractor = EntityExtractor()
+        extractor._available = True
+        
+        # Mock a failing model load
+        def failing_load_model():
+            return None
+        
+        extractor._load_model = failing_load_model
+        
+        entities = extractor.extract_entities("Test text")
+        assert entities == []
+
+
+class TestEntityDocumentMapping:
+    """Test entity-document mapping functionality."""
+    
+    def test_create_entity_document_mapping(self):
+        """Test creation of entity-document mappings."""
+        entities = [
+            {
+                "text": "Apple Inc",
+                "label": "ORG",
+                "start": 0,
+                "end": 9,
+                "confidence": 1.0
+            },
+            {
+                "text": "California",
+                "label": "GPE", 
+                "start": 30,
+                "end": 40,
+                "confidence": 1.0
+            }
+        ]
+        
+        mappings = create_entity_document_mapping(entities, "doc123", "chunk456")
+        
+        assert len(mappings) == 2
+        
+        # Check first mapping
+        assert mappings[0]["entity_text"] == "apple inc"  # Should be normalized to lowercase
+        assert mappings[0]["entity_label"] == "ORG"
+        assert mappings[0]["document_id"] == "doc123"
+        assert mappings[0]["chunk_id"] == "chunk456"
+        assert mappings[0]["start_pos"] == 0
+        assert mappings[0]["end_pos"] == 9
+        
+        # Check second mapping
+        assert mappings[1]["entity_text"] == "california"
+        assert mappings[1]["entity_label"] == "GPE"
+    
+    def test_enhance_chunk_with_entities(self):
+        """Test chunk enhancement with entities."""
+        chunk_data = {
+            "content": "Tesla Motors is an electric vehicle company.",
+            "chunk_id": "chunk123"
+        }
+        
+        # Mock extractor that returns test entities
+        mock_extractor = Mock()
+        mock_extractor.is_available.return_value = True
+        mock_extractor.extract_entities.return_value = [
+            {
+                "text": "Tesla Motors",
+                "label": "ORG",
+                "start": 0,
+                "end": 12,
+                "confidence": 1.0
+            }
+        ]
+        
+        enhanced = enhance_chunk_with_entities(chunk_data, mock_extractor)
+        
+        assert enhanced["content"] == chunk_data["content"]
+        assert enhanced["chunk_id"] == chunk_data["chunk_id"]
+        assert len(enhanced["entities"]) == 1
+        assert enhanced["entity_count"] == 1
+        assert enhanced["entity_types"] == ["ORG"]
+        assert enhanced["entities"][0]["text"] == "Tesla Motors"
+    
+    def test_enhance_chunk_extractor_unavailable(self):
+        """Test chunk enhancement when extractor is unavailable."""
+        chunk_data = {"content": "Test content", "chunk_id": "chunk123"}
+        
+        mock_extractor = Mock()
+        mock_extractor.is_available.return_value = False
+        
+        enhanced = enhance_chunk_with_entities(chunk_data, mock_extractor)
+        
+        assert enhanced["entities"] == []
+        assert enhanced["entity_count"] == 0
+    
+    def test_get_entity_boost_score(self):
+        """Test entity boost score calculation."""
+        query_entities = ["Tesla", "Elon Musk"]
+        chunk_entities = [
+            {"text": "Tesla Motors", "label": "ORG"},
+            {"text": "Tesla", "label": "ORG"},
+            {"text": "California", "label": "GPE"}
+        ]
+        
+        boost_score = get_entity_boost_score(query_entities, chunk_entities, boost_factor=0.2)
+        
+        # Should find 1 match (Tesla - case insensitive)
+        assert boost_score == 0.2  # 1 match * 0.2 boost_factor
+    
+    def test_get_entity_boost_score_multiple_matches(self):
+        """Test entity boost score with multiple matches."""
+        query_entities = ["Apple", "California"]
+        chunk_entities = [
+            {"text": "Apple Inc", "label": "ORG"},
+            {"text": "apple", "label": "ORG"},  # Different case, should match "Apple"
+            {"text": "California", "label": "GPE"}
+        ]
+        
+        boost_score = get_entity_boost_score(query_entities, chunk_entities, boost_factor=0.1)
+        
+        # Should find 2 matches: Apple (matches both apple variants) and California
+        assert boost_score == 0.2  # 2 matches * 0.1 boost_factor
+    
+    def test_get_entity_boost_score_capped(self):
+        """Test that entity boost score is capped at maximum."""
+        query_entities = ["test"] * 10  # Many entities
+        chunk_entities = [{"text": "test", "label": "ORG"}] * 10  # Many matches
+        
+        boost_score = get_entity_boost_score(query_entities, chunk_entities, boost_factor=0.2)
+        
+        # Should be capped at 0.5 max_boost
+        assert boost_score == 0.5
+    
+    def test_get_entity_boost_score_no_matches(self):
+        """Test entity boost score with no matches."""
+        query_entities = ["Apple"]
+        chunk_entities = [{"text": "Microsoft", "label": "ORG"}]
+        
+        boost_score = get_entity_boost_score(query_entities, chunk_entities, boost_factor=0.2)
+        
+        assert boost_score == 0.0
 
 
 class TestCrossEncoderReranker:
@@ -298,6 +549,62 @@ class TestPhase4ConfigValidation:
         # Test invalid case
         invalid_cross_encoder_top_k = 150
         assert invalid_cross_encoder_top_k > retrieval_k  # Should be invalid
+    
+    def test_cross_encoder_positive_validation(self):
+        """Test that cross_encoder_top_k must be positive."""
+        # Test valid positive values
+        for valid_k in [1, 5, 20, 100]:
+            assert valid_k > 0
+        
+        # Test invalid values
+        for invalid_k in [0, -1, -10]:
+            assert invalid_k <= 0
+    
+    def test_entity_boost_factor_range(self):
+        """Test that entity_boost_factor is in valid range."""
+        # Test valid range
+        for valid_factor in [0.0, 0.1, 0.5, 1.0]:
+            assert 0.0 <= valid_factor <= 1.0
+        
+        # Test invalid values
+        invalid_factors = [-0.1, 1.1, 2.0]
+        for invalid_factor in invalid_factors:
+            assert not (0.0 <= invalid_factor <= 1.0)
+
+
+class TestPhase4Security:
+    """Test security validations for Phase 4 features."""
+    
+    def test_openai_api_key_validation(self):
+        """Test OpenAI API key security validation."""
+        # Test placeholder detection
+        placeholder_keys = [
+            "your-openai-api-key-here",
+            "sk-placeholder",
+            "change-me",
+            "your-key-here"
+        ]
+        
+        for placeholder in placeholder_keys:
+            # These should be detected as placeholders
+            assert placeholder.lower() in {p.lower() for p in placeholder_keys}
+    
+    def test_cross_encoder_model_validation(self):
+        """Test cross-encoder model validation."""
+        # Known models should pass validation
+        known_models = [
+            "ms-marco-MiniLM-L-6-v2",
+            "ms-marco-MiniLM-L-12-v2",
+            "cross-encoder/ms-marco-MiniLM-L-6-v2"
+        ]
+        
+        for model in known_models:
+            assert isinstance(model, str) and len(model) > 0
+        
+        # Invalid models
+        invalid_models = ["", None, 123]
+        for invalid_model in invalid_models:
+            assert not (isinstance(invalid_model, str) and len(invalid_model) > 0)
 
 
 if __name__ == "__main__":

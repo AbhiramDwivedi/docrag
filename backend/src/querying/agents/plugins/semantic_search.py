@@ -232,6 +232,16 @@ class SemanticSearchPlugin(Plugin):
                     if settings.enable_debug_logging:
                         logger.info("Cross-encoder reranking requested but not available")
             
+            # Phase 4: Entity-aware boosting
+            if getattr(settings, 'enable_entity_indexing', False) and query_analysis.get("detected_entities"):
+                try:
+                    initial_results = self._apply_entity_boosting(initial_results, query_analysis.get("detected_entities", []))
+                    if settings.enable_debug_logging:
+                        logger.info("Applied entity-aware boosting to results")
+                except Exception as e:
+                    if settings.enable_debug_logging:
+                        logger.warning(f"Entity boosting failed: {e}")
+            
             # Check for low-quality results - if all results have very low similarity, provide helpful response
             if initial_results:
                 max_similarity = max(result.get('similarity', 0.0) for result in initial_results)
@@ -791,6 +801,85 @@ Answer:"""
         boosted_results.sort(key=lambda x: x.get("similarity", 0.0), reverse=True)
         
         return boosted_results
+    
+    def _apply_entity_boosting(self, results: List[Dict[str, Any]], detected_entities: List[str]) -> List[Dict[str, Any]]:
+        """Apply Phase 4 entity-aware boosting using entity-document mappings.
+        
+        Args:
+            results: List of search results
+            detected_entities: Entities detected in the query
+            
+        Returns:
+            Results with entity boosting applied based on stored entity mappings
+        """
+        if not detected_entities or not results:
+            return results
+        
+        try:
+            # Get chunk IDs from results
+            chunk_ids = [result.get('chunk_id') for result in results if result.get('chunk_id')]
+            if not chunk_ids:
+                return results
+            
+            # Get entity mappings from vector store
+            entity_mappings = self._vector_store.get_entity_mappings(chunk_ids=chunk_ids)
+            
+            # Create a mapping from chunk_id to its entities for quick lookup
+            chunk_entities = {}
+            for mapping in entity_mappings:
+                chunk_id = mapping['chunk_id']
+                if chunk_id not in chunk_entities:
+                    chunk_entities[chunk_id] = []
+                chunk_entities[chunk_id].append(mapping)
+            
+            # Apply entity boosting
+            entity_boost_factor = getattr(settings, 'entity_boost_factor', 0.2)
+            boosted_results = []
+            
+            for result in results:
+                boosted_result = result.copy()
+                chunk_id = result.get('chunk_id')
+                
+                if chunk_id and chunk_id in chunk_entities:
+                    # Get entity boost score using the stored entity mappings
+                    from shared.entity_indexing import get_entity_boost_score
+                    
+                    chunk_entity_list = chunk_entities[chunk_id]
+                    boost_score = get_entity_boost_score(
+                        detected_entities,
+                        chunk_entity_list,
+                        entity_boost_factor
+                    )
+                    
+                    if boost_score > 0:
+                        # Apply entity boost to similarity
+                        current_similarity = result.get("similarity", 0.0)
+                        boosted_similarity = min(1.0, current_similarity + boost_score)
+                        boosted_distance = 1.0 - boosted_similarity
+                        
+                        boosted_result["similarity"] = boosted_similarity
+                        boosted_result["distance"] = boosted_distance
+                        boosted_result["entity_boosted"] = True
+                        boosted_result["entity_boost_score"] = boost_score
+                        boosted_result["matched_entities"] = len([
+                            ent for ent in detected_entities 
+                            if any(ent.lower() == mapping['entity_text'] for mapping in chunk_entity_list)
+                        ])
+                        
+                        if settings.enable_debug_logging:
+                            logger.debug(f"Entity boosted chunk {chunk_id}: similarity {current_similarity:.3f} -> {boosted_similarity:.3f}")
+                
+                boosted_results.append(boosted_result)
+            
+            # Re-sort by boosted similarity (higher is better)
+            boosted_results.sort(key=lambda x: x.get("similarity", 0.0), reverse=True)
+            
+            return boosted_results
+            
+        except Exception as e:
+            if settings.enable_debug_logging:
+                logger.error(f"Error in entity boosting: {e}")
+            return results
     
     def _build_enhanced_context(self, results: List[Dict[str, Any]]) -> str:
         """Build enhanced context from search results with proper attribution.

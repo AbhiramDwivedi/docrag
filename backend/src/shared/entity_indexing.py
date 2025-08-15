@@ -28,14 +28,22 @@ class EntityExtractor:
         # Check if spaCy is available
         try:
             import spacy
+            # Basic security check - verify the module is from expected source
+            module_path = spacy.__file__
+            if module_path and 'site-packages' not in module_path:
+                logger.warning(f"spaCy loaded from unexpected location: {module_path}")
+            
             self._spacy = spacy
             self._available = True
-            logger.info("spaCy available for entity extraction")
+            logger.info("spaCy library validated and available for entity extraction")
         except ImportError:
             logger.warning(
                 "spaCy not available. Entity-aware indexing will be disabled. "
                 "Install with: pip install spacy && python -m spacy download en_core_web_sm"
             )
+        except Exception as e:
+            logger.error(f"Error loading spaCy: {e}")
+            self._available = False
     
     def _load_model(self):
         """Lazy load spaCy model."""

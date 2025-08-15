@@ -191,6 +191,27 @@ class VectorStore:
         cur.execute("CREATE INDEX IF NOT EXISTS idx_email_subject ON email_metadata (subject)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_email_thread ON email_metadata (thread_id)")
         
+        # Phase 4: Entity mappings table for entity-aware indexing
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS entity_mappings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                entity_text TEXT NOT NULL,
+                entity_label TEXT NOT NULL,
+                document_id TEXT NOT NULL,
+                chunk_id TEXT NOT NULL,
+                start_pos INTEGER,
+                end_pos INTEGER,
+                confidence REAL DEFAULT 1.0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        # Entity mapping indexes for efficient queries
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_entity_text ON entity_mappings (entity_text)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_document_id ON entity_mappings (document_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_chunk_id ON entity_mappings (chunk_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_entity_label ON entity_mappings (entity_label)")
+        
         self.conn.commit()
 
     def upsert(self, chunk_ids: List[str], vectors: Any, metadata_rows: List[Tuple]):
@@ -882,3 +903,103 @@ class VectorStore:
         # Only show success message if actual changes were made
         if changes_made:
             print("Database schema migration completed successfully")
+
+    def store_entity_mappings(self, entity_mappings: List[Dict[str, Any]]) -> None:
+        """Store entity-to-document mappings for Phase 4 entity-aware indexing.
+        
+        Args:
+            entity_mappings: List of entity mapping dictionaries with keys:
+                - entity_text: Normalized entity text
+                - entity_label: Entity label (ORG, PERSON, etc.)
+                - document_id: Document identifier
+                - chunk_id: Chunk identifier  
+                - start_pos: Start position in text
+                - end_pos: End position in text
+                - confidence: Confidence score (optional, defaults to 1.0)
+        """
+        if not entity_mappings:
+            return
+            
+        cur = self.conn.cursor()
+        
+        # Prepare insert query
+        insert_query = """
+            INSERT OR REPLACE INTO entity_mappings 
+            (entity_text, entity_label, document_id, chunk_id, start_pos, end_pos, confidence)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """
+        
+        # Prepare data for batch insert
+        insert_data = []
+        for mapping in entity_mappings:
+            insert_data.append((
+                mapping['entity_text'],
+                mapping['entity_label'],
+                mapping['document_id'],
+                mapping['chunk_id'],
+                mapping.get('start_pos', 0),
+                mapping.get('end_pos', 0),
+                mapping.get('confidence', 1.0)
+            ))
+        
+        # Batch insert entity mappings
+        cur.executemany(insert_query, insert_data)
+        self.conn.commit()
+
+    def get_entity_mappings(self, chunk_ids: List[str] = None, entity_text: str = None) -> List[Dict[str, Any]]:
+        """Retrieve entity mappings for chunks or specific entities.
+        
+        Args:
+            chunk_ids: List of chunk IDs to get mappings for (optional)
+            entity_text: Specific entity text to search for (optional)
+            
+        Returns:
+            List of entity mapping dictionaries
+        """
+        cur = self.conn.cursor()
+        
+        if chunk_ids:
+            # Get mappings for specific chunks
+            placeholders = ','.join(['?'] * len(chunk_ids))
+            query = f"""
+                SELECT entity_text, entity_label, document_id, chunk_id, 
+                       start_pos, end_pos, confidence
+                FROM entity_mappings 
+                WHERE chunk_id IN ({placeholders})
+            """
+            cur.execute(query, chunk_ids)
+        elif entity_text:
+            # Get mappings for specific entity
+            query = """
+                SELECT entity_text, entity_label, document_id, chunk_id,
+                       start_pos, end_pos, confidence  
+                FROM entity_mappings
+                WHERE entity_text = ? OR entity_text LIKE ?
+            """
+            cur.execute(query, (entity_text.lower(), f"%{entity_text.lower()}%"))
+        else:
+            # Get all mappings (use with caution)
+            query = """
+                SELECT entity_text, entity_label, document_id, chunk_id,
+                       start_pos, end_pos, confidence
+                FROM entity_mappings
+                LIMIT 1000
+            """
+            cur.execute(query)
+        
+        results = cur.fetchall()
+        
+        # Convert to dictionaries
+        mappings = []
+        for row in results:
+            mappings.append({
+                'entity_text': row[0],
+                'entity_label': row[1], 
+                'document_id': row[2],
+                'chunk_id': row[3],
+                'start_pos': row[4],
+                'end_pos': row[5],
+                'confidence': row[6]
+            })
+        
+        return mappings

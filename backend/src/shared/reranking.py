@@ -34,13 +34,23 @@ class CrossEncoderReranker:
         # Check if sentence-transformers is available
         try:
             from sentence_transformers import CrossEncoder
+            # Basic security check - verify the module is from expected source
+            import sentence_transformers
+            module_path = sentence_transformers.__file__
+            if module_path and 'site-packages' not in module_path:
+                logger.warning(f"sentence_transformers loaded from unexpected location: {module_path}")
+            
             self._cross_encoder_class = CrossEncoder
             self._model_available = True
+            logger.info("sentence-transformers library validated and loaded")
         except ImportError:
             logger.warning(
                 "sentence-transformers not available. Cross-encoder reranking will be disabled. "
                 "Install with: pip install sentence-transformers"
             )
+            self._cross_encoder_class = None
+        except Exception as e:
+            logger.error(f"Error loading sentence-transformers: {e}")
             self._cross_encoder_class = None
     
     def _get_model(self):
