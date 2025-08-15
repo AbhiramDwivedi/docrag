@@ -156,7 +156,7 @@ class ConstraintExtractor:
             Extracted count or None if not found, bounded to safe range (1-100)
         """
         for i, token in enumerate(tokens):
-            # Check for digit numbers
+            # Check for digit numbers (but skip if it starts with -)
             if token.isdigit():
                 count = int(token)
                 # Ensure safe bounds
