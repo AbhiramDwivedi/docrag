@@ -40,3 +40,8 @@ enable_query_expansion: false         # Enable query expansion for entity querie
 query_expansion_method: "synonyms"    # Query expansion method: 'synonyms', 'related_terms'
 enable_entity_indexing: false         # Enable entity-aware indexing during ingestion (requires spaCy)
 entity_boost_factor: 0.2              # Boost factor for entity-document mappings
+
+# Complex query analysis settings
+default_latest_count: 10               # Default number of items when count not specified in latest queries
+content_filter_widen_factor: 3         # Multiplier for initial metadata pool when content filtering follows
+semantic_max_k: 50                     # Upper bound for k in semantic search step

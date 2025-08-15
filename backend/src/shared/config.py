@@ -89,6 +89,11 @@ class Settings(BaseModel):
     enable_entity_indexing: bool = Field(default=False, description="Enable entity-aware indexing during ingestion")
     entity_boost_factor: float = Field(default=0.2, ge=0.0, le=1.0, description="Boost factor for entity-document mappings")
 
+    # Complex query analysis settings
+    default_latest_count: int = Field(default=10, ge=1, le=100, description="Default number of items when count not specified in latest queries")
+    content_filter_widen_factor: int = Field(default=3, ge=1, le=10, description="Multiplier for initial metadata pool when content filtering follows")
+    semantic_max_k: int = Field(default=50, ge=1, le=200, description="Upper bound for k in semantic search step")
+
     @field_validator('mmr_k')
     @classmethod
     def validate_mmr_k_vs_retrieval_k(cls, v: int, info: ValidationInfo) -> int:
