@@ -782,7 +782,7 @@ Answer:"""
         # Check for potential SQL injection patterns (basic protection)
         dangerous_patterns = [
             '--', ';', 'DROP', 'DELETE', 'UPDATE', 'INSERT', 'EXEC',
-            'UNION', 'SELECT', 'CREATE', 'ALTER', '<script', 'javascript:'
+            'UNION', 'SELECT', 'CREATE', 'ALTER', '<SCRIPT', 'JAVASCRIPT:'
         ]
         
         query_upper = query.upper()
