@@ -3,8 +3,8 @@
 ## Problem Statement
 
 **Current Issue**: Queries with multiple constraints return incorrect results:
-- Query: `"List 5 latest decks that talk about value propositions"`
-- Expected: 5 PowerPoint files, filtered by content about value propositions, sorted by modification date
+- Query: `"List 5 latest decks that discuss project roadmaps"`
+- Expected: 5 PowerPoint files, filtered by content about project roadmaps, sorted by modification date
 - Actual: 10 mixed file types, no content filtering, default metadata query behavior
 
 **Root Cause**: The system treats this as a simple metadata query, ignoring count, file type, and content constraints.
@@ -50,62 +50,34 @@ Query → ConstraintExtractor → OrchestratorAgent → DiscoveryAgent → Metad
 #### 1. ConstraintExtractor (`backend/shared/constraints.py`)
 **Purpose**: Parse natural language constraints into structured parameters
 
-**Interface**:
-```python
-@dataclass
-class QueryConstraints:
-    count: Optional[int] = None           # Extracted number: "5 latest" → 5
-    file_types: List[str] = field(default_factory=list)  # ["PPTX", "PPT"] 
-    has_content_filter: bool = False      # True if semantic terms present
-    content_terms: List[str] = field(default_factory=list)  # ["value", "propositions"]
-    sort_by: str = "modified_time"        # Fixed for latest queries
-    sort_order: str = "desc"              # Fixed for latest queries
+**Design**: Create a data structure to represent query constraints and a function to extract them from natural language. The constraint structure should include:
+- Numeric constraints (count)
+- File type mappings (decks → presentation files, docs → document files, etc.)
+- Content filtering requirements (semantic search terms)
+- Temporal sorting preferences (latest, recent, newest)
 
-def extract_constraints(query: str) -> QueryConstraints:
-    """Extract structured constraints from natural language query."""
-```
-
-**Implementation Notes**:
-- Number extraction: regex for digits + word map ("five" → 5, "ten" → 10)
-- Type mapping: {"decks": ["PPTX", "PPT"], "spreadsheets": ["XLSX", "XLS"], "docs": ["DOCX", "DOC"]}
-- Content detection: Remove constraint words, check if meaningful terms remain
-- Bound extracted numbers to safe range (1-100)
+**Implementation Approach**:
+- Use regular expressions and word mapping for number extraction
+- Maintain a dictionary of file type synonyms to canonical extensions
+- Detect content filtering by removing constraint keywords and checking for remaining meaningful terms
+- Apply bounds checking for extracted numeric values
 
 #### 2. Enhanced Orchestrator (`backend/src/querying/agents/agentic/orchestrator_agent.py`)
 **Purpose**: Create constraint-aware execution plans
 
-**Changes Required**:
-```python
-def _create_metadata_plan(self, intent: QueryIntent, query: str) -> ExecutionPlan:
-    """Create plan for metadata queries with constraint awareness."""
-    constraints = extract_constraints(query)  # NEW: Parse constraints
-    
-    if constraints.has_content_filter:
-        # Two-step plan: metadata narrowing + content filtering
-        return self._create_two_step_plan(constraints, query)
-    else:
-        # Single-step plan: metadata only  
-        return self._create_single_step_plan(constraints, query)
-```
+**Design Changes**:
+- Modify the metadata query planning logic to parse constraints first
+- Implement conditional planning: single-step for metadata-only queries, two-step for content-filtered queries
+- Pass extracted constraints as parameters in execution steps
+- Maintain backwards compatibility with existing simple queries
 
 #### 3. Enhanced Discovery Agent (`backend/src/querying/agents/agentic/discovery_agent.py`)
 **Purpose**: Forward constraints to metadata plugin
 
-**Changes Required**:
-```python
-def _execute_metadata_command(self, step: ExecutionStep, context: AgentContext) -> StepResult:
-    """Execute metadata command with constraint parameters."""
-    # Extract constraints from step parameters (set by orchestrator)
-    constraints = step.parameters.get("constraints")  # NEW
-    
-    params = {
-        "operation": self._determine_operation(query),
-        "count": constraints.count or self._get_default_count(),     # NEW
-        "file_type": constraints.file_types[0] if constraints.file_types else None,  # NEW
-    }
-    
-    result = metadata_plugin.execute(params)  # NOW INCLUDES CONSTRAINTS
-```
+**Design Changes**:
+- Modify metadata command execution to read constraint parameters from execution steps
+- Build metadata plugin parameters including count and file type constraints
+- Handle cases where constraints are missing or invalid with appropriate defaults
 
 #### 4. Metadata Plugin (already supports parameters)
 **Current State**: ✅ Already implemented in `_get_latest_files()`
@@ -115,31 +87,22 @@ def _execute_metadata_command(self, step: ExecutionStep, context: AgentContext) 
 
 **Required**: No changes needed, just parameter forwarding from Discovery Agent
 
-### Implementation Plan
+### Implementation Steps
 
-#### Phase 1: Constraint Extraction (1-2 hours)
-1. Create `backend/shared/constraints.py` with `QueryConstraints` and `extract_constraints()`
-2. Add unit tests in `tests/test_constraints.py`
-3. Test with query examples to validate parsing
+#### Step 1: Constraint Extraction
+Create the constraint parsing utility that can extract structured parameters from natural language queries. This includes number parsing, file type mapping, and content term detection.
 
-#### Phase 2: Orchestrator Integration (1 hour)  
-1. Import constraint extractor in orchestrator
-2. Modify `_create_metadata_plan()` to call `extract_constraints()`
-3. Pass constraints in step parameters
+#### Step 2: Orchestrator Integration  
+Integrate constraint extraction into the orchestrator's planning logic. Modify metadata query planning to parse constraints and create appropriate execution plans based on whether content filtering is needed.
 
-#### Phase 3: Discovery Agent Forwarding (30 min)
-1. Modify `_execute_metadata_command()` to read constraints from step parameters
-2. Build metadata plugin params with count/file_type
+#### Step 3: Discovery Agent Parameter Forwarding
+Update the discovery agent to read constraints from execution step parameters and forward them to the metadata plugin. This ensures the metadata plugin receives the correct count and file type filters.
 
-#### Phase 4: Two-Step Content Filtering (1-2 hours)
-1. Implement two-step plan creation in orchestrator
-2. Modify analysis agent to accept `target_docs` parameter for restricted semantic search
-3. Add count clipping with deterministic tie-breaking
+#### Step 4: Two-Step Content Filtering
+Implement the logic for two-step queries where metadata filtering is followed by content filtering. This includes widening the initial metadata query and then applying semantic search with proper result clipping.
 
-#### Phase 5: Testing & Validation (1 hour)
-1. Integration tests with deterministic dataset
-2. Verify query: `"List 5 latest decks about value propositions"` returns exactly 5 PPTX files
-3. Performance smoke tests
+#### Step 5: Testing & Validation
+Create comprehensive tests to verify the constraint parsing, plan creation, and result filtering work correctly across different query types.
 
 ### Success Criteria
 
@@ -152,14 +115,11 @@ def _execute_metadata_command(self, step: ExecutionStep, context: AgentContext) 
 
 ### Configuration
 
-Add to `backend/src/shared/config.yaml.template`:
-```yaml
-agent:
-  constraints:
-    default_count: 10           # Default when no count specified
-    content_widen_factor: 3     # Multiply count for step 1 when content filtering
-    max_count: 100             # Safety limit for extracted counts
-```
+Add constraint-related configuration options:
+- Default count when no count specified
+- Content filtering widen factor (multiply count for step 1 when content filtering)  
+- Maximum count limit for safety
+- File type synonym mappings
 
 ### Error Handling
 
