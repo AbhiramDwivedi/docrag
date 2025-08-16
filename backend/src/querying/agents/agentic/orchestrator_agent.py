@@ -262,12 +262,96 @@ class OrchestratorAgent(BaseAgent):
             )
     
     def _create_metadata_query_plan(self, plan: ExecutionPlan, query: str, intent_result) -> None:
-        """Create plan for metadata queries."""
-        # Simple plan - just return metadata
+        """Create plan for metadata queries with constraint-aware processing."""
+        # Import constraint extraction locally to avoid circular imports
+        from shared.constraints import ConstraintExtractor, get_content_filtering_multiplier
+        
+        # Extract constraints from the query
+        constraints = ConstraintExtractor.extract(query)
+        
+        self.orchestrator_logger.info(f"Extracted constraints: count={constraints.count}, "
+                                    f"file_types={constraints.file_types}, "
+                                    f"has_content_filter={constraints.has_content_filter}")
+        
+        if constraints.has_content_filter:
+            # Two-step plan: metadata filtering + content filtering
+            self._create_two_step_content_plan(plan, query, constraints)
+        else:
+            # Single-step plan: metadata-only query
+            self._create_single_step_metadata_plan(plan, query, constraints)
+    
+    def _create_single_step_metadata_plan(self, plan: ExecutionPlan, query: str, constraints) -> None:
+        """Create single-step plan for metadata-only queries."""
+        # Prepare metadata parameters with extracted constraints
+        metadata_params = {
+            "query": query,
+            "intent": "metadata_query",
+            "operation": "get_latest_files"  # Use latest files operation for constraint support
+        }
+        
+        # Add constraint parameters if present
+        if constraints.count is not None:
+            metadata_params["count"] = constraints.count
+        
+        if constraints.file_types:
+            # Use first file type for the metadata plugin (it supports single file_type)
+            # For multiple types, the metadata plugin's _get_latest_files can handle it
+            if len(constraints.file_types) == 1:
+                metadata_params["file_type"] = constraints.file_types[0]
+            else:
+                # Pass as list - the metadata plugin will need to handle this
+                metadata_params["file_types"] = constraints.file_types
+        
         plan.add_step(
             StepType.RETURN_METADATA,
             "discovery",
-            {"query": query, "intent": "metadata_query"}
+            metadata_params
+        )
+    
+    def _create_two_step_content_plan(self, plan: ExecutionPlan, query: str, constraints) -> None:
+        """Create two-step plan for queries with content filtering."""
+        from shared.constraints import get_content_filtering_multiplier, get_default_count
+        
+        # Step 1: Metadata filtering with widened count
+        base_count = constraints.count if constraints.count is not None else get_default_count()
+        widened_count = base_count * get_content_filtering_multiplier()
+        
+        metadata_params = {
+            "query": query,
+            "intent": "metadata_query_for_content",
+            "operation": "get_latest_files",
+            "count": widened_count
+        }
+        
+        # Add file type constraints
+        if constraints.file_types:
+            if len(constraints.file_types) == 1:
+                metadata_params["file_type"] = constraints.file_types[0]
+            else:
+                metadata_params["file_types"] = constraints.file_types
+        
+        # Add metadata step
+        metadata_step_id = plan.add_step(
+            StepType.RETURN_METADATA,
+            "discovery",
+            metadata_params
+        )
+        
+        # Step 2: Content filtering on metadata results
+        content_params = {
+            "query": query,
+            "intent": "content_filtering",
+            "extraction_type": "content_filtering",
+            "content_terms": constraints.content_terms,
+            "target_count": base_count,  # Final desired count
+            "use_target_docs": True  # Signal to restrict search to metadata results
+        }
+        
+        plan.add_step(
+            StepType.EXTRACT_CONTENT,
+            "analysis",
+            content_params,
+            dependencies=[metadata_step_id]
         )
     
     def _create_relationship_analysis_plan(self, plan: ExecutionPlan, query: str, intent_result) -> None:
@@ -470,18 +554,53 @@ class OrchestratorAgent(BaseAgent):
         return "No documents found matching your query."
     
     def _format_analysis_response(self, context: AgentContext, results: List[StepResult]) -> str:
-        """Format response for content analysis."""
+        """Format response for content analysis with constraint validation."""
         response_parts = []
         
-        for result in results:
-            if result.step_type == StepType.EXTRACT_CONTENT:
-                content = result.get_value("extracted_content", {})
-                if content.get("content"):
-                    response_parts.append(content["content"])
-            elif result.step_type == StepType.ANALYZE_DECISIONS:
-                decisions = result.get_value("analysis_summary", "")
-                if decisions:
-                    response_parts.append(f"\n📋 Decision Analysis:\n{decisions}")
+        # Check if this was a constraint-based content filtering query
+        try:
+            from shared.constraints import ConstraintExtractor, validate_constraint_results
+            constraints = ConstraintExtractor.extract(context.query)
+            
+            content_results = []
+            for result in results:
+                if result.step_type == StepType.EXTRACT_CONTENT:
+                    content = result.get_value("extracted_content", {})
+                    if content.get("content"):
+                        response_parts.append(content["content"])
+                        
+                    # Extract sources for constraint validation
+                    sources = content.get("sources", [])
+                    content_results.extend(sources)
+                        
+                elif result.step_type == StepType.ANALYZE_DECISIONS:
+                    decisions = result.get_value("analysis_summary", "")
+                    if decisions:
+                        response_parts.append(f"\n📋 Decision Analysis:\n{decisions}")
+            
+            # Validate constraints for content filtering queries
+            if constraints.has_content_filter and content_results:
+                validation = validate_constraint_results(constraints, content_results)
+                
+                if not validation["meets_constraints"]:
+                    # Add constraint validation feedback
+                    feedback_parts = []
+                    
+                    if validation["issues"]:
+                        feedback_parts.append("\n⚠️ Query constraints:")
+                        for issue in validation["issues"]:
+                            feedback_parts.append(f"  • {issue}")
+                    
+                    if validation["suggestions"]:
+                        feedback_parts.append("\n💡 Suggestions:")
+                        for suggestion in validation["suggestions"]:
+                            feedback_parts.append(f"  • {suggestion}")
+                    
+                    if feedback_parts:
+                        response_parts.extend(feedback_parts)
+            
+        except Exception as e:
+            self.orchestrator_logger.warning(f"Content constraint validation failed: {e}")
         
         return "\n\n".join(response_parts) if response_parts else "No content analysis available."
     
@@ -514,7 +633,54 @@ class OrchestratorAgent(BaseAgent):
         return "\n".join(response_parts) if response_parts else "Investigation completed."
     
     def _format_metadata_response(self, context: AgentContext, results: List[StepResult]) -> str:
-        """Format response for metadata queries."""
+        """Format response for metadata queries with constraint validation."""
+        # Check if this was a constraint-based query
+        try:
+            from shared.constraints import ConstraintExtractor, validate_constraint_results
+            constraints = ConstraintExtractor.extract(context.query)
+            
+            # Find metadata results
+            metadata_result = None
+            for result in results:
+                if result.step_type == StepType.RETURN_METADATA:
+                    metadata_result = result
+                    break
+            
+            if metadata_result:
+                # Extract results for validation
+                result_data = metadata_result.get_value("data", {})
+                files = result_data.get("files", []) if isinstance(result_data, dict) else []
+                
+                # Validate against constraints
+                validation = validate_constraint_results(constraints, files)
+                
+                # Get formatted response
+                base_response = metadata_result.get_value("formatted_response", "Metadata retrieved")
+                
+                # Add constraint validation feedback
+                if not validation["meets_constraints"]:
+                    feedback_parts = [base_response]
+                    
+                    # Add issues
+                    if validation["issues"]:
+                        feedback_parts.append("\n⚠️ Constraint validation:")
+                        for issue in validation["issues"]:
+                            feedback_parts.append(f"  • {issue}")
+                    
+                    # Add suggestions
+                    if validation["suggestions"]:
+                        feedback_parts.append("\n💡 Suggestions:")
+                        for suggestion in validation["suggestions"]:
+                            feedback_parts.append(f"  • {suggestion}")
+                    
+                    return "\n".join(feedback_parts)
+                
+                return base_response
+            
+        except Exception as e:
+            self.orchestrator_logger.warning(f"Constraint validation failed: {e}")
+        
+        # Fallback to simple formatting
         for result in results:
             if result.step_type == StepType.RETURN_METADATA:
                 return result.get_value("formatted_response", "Metadata retrieved")

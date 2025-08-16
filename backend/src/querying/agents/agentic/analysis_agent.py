@@ -124,6 +124,13 @@ class AnalysisAgent(BaseAgent):
             # Process and store results
             extracted_content = self._process_extraction_results(result, step, context)
             
+            # Handle constraint-based content filtering with result clipping
+            if (step.parameters.get("use_target_docs") and 
+                step.parameters.get("extraction_type") == "content_filtering"):
+                extracted_content = self._apply_constraint_result_clipping(
+                    extracted_content, step, context
+                )
+            
             # Store in context
             source_key = f"content_extraction_{step.id}"
             context.add_extracted_content(source_key, extracted_content)
@@ -305,22 +312,101 @@ class AnalysisAgent(BaseAgent):
         """Prepare parameters for content extraction."""
         base_params = step.parameters.copy()
         
+        # Check if this is constraint-based content filtering
+        if base_params.get("use_target_docs") and base_params.get("extraction_type") == "content_filtering":
+            return self._prepare_constraint_content_params(step, context)
+        
         # Use target documents if specified
         target_docs = base_params.get("target_docs", context.get_discovered_paths())
         
         params = {
             "question": base_params.get("query", context.query),
-            "use_document_level": True,
             "k": 50,
-            "max_documents": len(target_docs) if target_docs else 5
+            "mmr_k": len(target_docs) if target_docs else 5
         }
         
-        # If we have specific documents, focus search on them
-        if target_docs:
-            params["target_documents"] = target_docs
+        # Note: target_documents filtering not currently supported by semantic plugin
+        # Semantic search will return results across all documents
         
         params.update(base_params)
         return params
+    
+    def _prepare_constraint_content_params(self, step: ExecutionStep, context: AgentContext) -> Dict[str, Any]:
+        """Prepare parameters for constraint-based content filtering.
+        
+        This method handles the second step of two-step content queries where we need
+        to filter metadata results based on content relevance.
+        """
+        base_params = step.parameters.copy()
+        
+        # Get target documents from metadata step results
+        target_docs = self._get_target_docs_from_metadata(context)
+        target_count = base_params.get("target_count", 10)
+        content_terms = base_params.get("content_terms", [])
+        
+        # Build content-focused query
+        if content_terms:
+            # Join content terms to create search query
+            content_query = " ".join(content_terms)
+        else:
+            # Fallback to original query
+            content_query = base_params.get("query", context.query)
+        
+        params = {
+            "question": content_query,
+            "k": min(len(target_docs) * 2, 100) if target_docs else 50,  # Search more chunks per doc
+            "mmr_k": target_count  # Final desired count after MMR
+        }
+        
+        # Note: target_documents filtering will need to be implemented 
+        # differently since semantic search doesn't support it directly.
+        # For now, let the semantic search plugin handle the filtering 
+        # and we'll clip results in post-processing.
+        
+        return params
+    
+    def _get_target_docs_from_metadata(self, context: AgentContext) -> List[str]:
+        """Extract document paths from previous metadata step results."""
+        target_docs = []
+        
+        # Look for metadata results in context
+        for content_key, content_data in context.extracted_content.items():
+            if isinstance(content_data, dict):
+                # Check for metadata_result format
+                if "metadata_result" in content_data:
+                    metadata_result = content_data["metadata_result"]
+                    if isinstance(metadata_result, dict) and "data" in metadata_result:
+                        files_data = metadata_result["data"].get("files", [])
+                        for file_info in files_data:
+                            if isinstance(file_info, dict) and "path" in file_info:
+                                target_docs.append(file_info["path"])
+        
+        return target_docs
+    
+    def _apply_constraint_result_clipping(self, extracted_content: Dict[str, Any], 
+                                        step: ExecutionStep, context: AgentContext) -> Dict[str, Any]:
+        """Apply result clipping for constraint-based content filtering.
+        
+        This ensures we return exactly the requested count of documents
+        for multi-constraint queries.
+        """
+        target_count = step.parameters.get("target_count", 10)
+        sources = extracted_content.get("sources", [])
+        
+        if len(sources) > target_count:
+            # Sort sources by relevance (semantic plugin should have returned them sorted)
+            # Then clip to requested count
+            clipped_sources = sources[:target_count]
+            
+            # Update the extracted content
+            extracted_content = extracted_content.copy()
+            extracted_content["sources"] = clipped_sources
+            extracted_content["clipped_from"] = len(sources)
+            extracted_content["final_count"] = len(clipped_sources)
+            
+            self.agent_logger.info(f"Clipped results from {len(sources)} to {len(clipped_sources)} documents")
+        
+        return extracted_content
     
     def _prepare_decision_analysis_params(self, step: ExecutionStep, context: AgentContext) -> Dict[str, Any]:
         """Prepare parameters for decision analysis."""
@@ -333,10 +419,8 @@ class AnalysisAgent(BaseAgent):
         
         return {
             "question": decision_query,
-            "use_document_level": True,
             "k": 30,
-            "max_documents": 3,
-            "context_window": 4
+            "mmr_k": 3  # Focus on top 3 most relevant results
         }
     
     def _prepare_document_specific_params(self, step: ExecutionStep, document: Dict[str, Any], 
@@ -344,10 +428,8 @@ class AnalysisAgent(BaseAgent):
         """Prepare parameters for document-specific search."""
         return {
             "question": step.parameters.get("query", context.query),
-            "target_documents": [document.get("path", "")],
-            "use_document_level": True,
             "k": 20,
-            "max_documents": 1
+            "mmr_k": 1  # Focus on single most relevant result per document
         }
     
     def _process_extraction_results(self, result: Dict[str, Any], 

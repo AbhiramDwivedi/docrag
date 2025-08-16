@@ -1042,7 +1042,11 @@ Answer:"""
         )
     
     def validate_params(self, params: Dict[str, Any]) -> bool:
-        """Validate parameters before execution."""
+        """Validate parameters before execution.
+        
+        Only validates core required parameters and known parameters.
+        Ignores unknown parameters to allow for flexible orchestration.
+        """
         if "question" not in params:
             return False
         
@@ -1050,27 +1054,40 @@ Answer:"""
         if not isinstance(question, str) or not question.strip():
             return False
         
-        # Validate optional parameters
-        k = params.get("k", settings.retrieval_k)
-        if not isinstance(k, int) or k < 1:
+        # Validate only known optional parameters, ignore unknown ones
+        # This allows orchestrator agents to pass additional parameters
+        
+        k = params.get("k")
+        if k is not None and (not isinstance(k, int) or k < 1):
             return False
             
-        mmr_lambda = params.get("mmr_lambda", settings.mmr_lambda)
-        if not isinstance(mmr_lambda, (int, float)) or not 0.0 <= mmr_lambda <= 1.0:
+        mmr_lambda = params.get("mmr_lambda")
+        if mmr_lambda is not None and (not isinstance(mmr_lambda, (int, float)) or not 0.0 <= mmr_lambda <= 1.0):
             return False
             
-        mmr_k = params.get("mmr_k", settings.mmr_k)
-        if not isinstance(mmr_k, int) or mmr_k < 1:
+        mmr_k = params.get("mmr_k")
+        if mmr_k is not None and (not isinstance(mmr_k, int) or mmr_k < 1):
             return False
             
-        enable_mmr = params.get("enable_mmr", True)
-        if not isinstance(enable_mmr, bool):
+        enable_mmr = params.get("enable_mmr")
+        if enable_mmr is not None and not isinstance(enable_mmr, bool):
             return False
         
         include_metadata_boost = params.get("include_metadata_boost")
         if include_metadata_boost is not None and not isinstance(include_metadata_boost, bool):
             return False
         
+        # Validate Phase 4 parameters if present
+        enable_cross_encoder = params.get("enable_cross_encoder")
+        if enable_cross_encoder is not None and not isinstance(enable_cross_encoder, bool):
+            return False
+            
+        enable_query_expansion = params.get("enable_query_expansion")
+        if enable_query_expansion is not None and not isinstance(enable_query_expansion, bool):
+            return False
+        
+        # Allow orchestration parameters to pass through without validation
+        # The execute method will extract what it needs and ignore the rest
         return True
     
     def _deduplicate_results(self, results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
