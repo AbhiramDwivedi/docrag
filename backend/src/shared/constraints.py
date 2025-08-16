@@ -155,9 +155,41 @@ class ConstraintExtractor:
         logger.debug(f"Extracted constraints from '{query}': "
                     f"count={constraints.count}, file_types={constraints.file_types}, "
                     f"content_terms={constraints.content_terms}, "
-                    f"has_content_filter={constraints.has_content_filter}")
+                    f"has_content_filter={constraints.has_content_filter}, "
+                    f"has_recency_constraint={constraints.has_recency_constraint}")
         
         return constraints
+    
+    @classmethod
+    def explain_constraints(cls, query: str) -> str:
+        """Provide human-readable explanation of extracted constraints.
+        
+        Args:
+            query: Natural language query string
+            
+        Returns:
+            Human-readable explanation of what constraints were detected
+        """
+        constraints = cls.extract(query)
+        
+        parts = []
+        
+        if constraints.count:
+            parts.append(f"Count: {constraints.count}")
+            
+        if constraints.file_types:
+            parts.append(f"File types: {', '.join(constraints.file_types)}")
+            
+        if constraints.content_terms:
+            parts.append(f"Content search terms: {', '.join(constraints.content_terms)}")
+            
+        if constraints.has_recency_constraint:
+            parts.append("Time constraint: Recent/latest files requested")
+            
+        if not parts:
+            return "No specific constraints detected - will use default search parameters"
+            
+        return "Detected constraints: " + "; ".join(parts)
     
     @classmethod
     def _extract_count(cls, query: str) -> Optional[int]:
@@ -222,7 +254,7 @@ class ConstraintExtractor:
             query: Lowercase query string
             
         Returns:
-            List of uppercase file extensions
+            List of uppercase file extensions with modern formats prioritized
         """
         file_types = set()
         
@@ -231,7 +263,35 @@ class ConstraintExtractor:
             if re.search(r'\b' + re.escape(synonym) + r'\b', query):
                 file_types.update(extensions)
         
-        return sorted(list(file_types))
+        # Convert to sorted list with modern format prioritization
+        result = list(file_types)
+        result.sort(key=cls._get_format_priority)
+        return result
+    
+    @classmethod
+    def _get_format_priority(cls, file_type: str) -> tuple:
+        """Get priority for file type sorting (modern formats first).
+        
+        Args:
+            file_type: File extension like 'XLSX', 'XLS'
+            
+        Returns:
+            Tuple for sorting (lower values = higher priority)
+        """
+        # Priority mapping: modern formats get lower numbers (higher priority)
+        priority_map = {
+            # Office formats - modern first
+            'DOCX': (1, 1), 'DOC': (1, 2),
+            'XLSX': (2, 1), 'XLS': (2, 2), 
+            'PPTX': (3, 1), 'PPT': (3, 2),
+            
+            # Other formats
+            'PDF': (4, 1),
+            'MSG': (5, 1),
+            'TXT': (6, 1)
+        }
+        
+        return priority_map.get(file_type, (99, 1))  # Unknown formats last
     
     @classmethod
     def _has_recency_constraint(cls, query: str) -> bool:
@@ -334,3 +394,53 @@ def get_content_filtering_multiplier() -> int:
         return settings.content_filtering_multiplier
     except:
         return 3  # Default fallback
+
+
+def validate_constraint_results(constraints: QueryConstraints, results: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Validate if search results meet the extracted constraints.
+    
+    Args:
+        constraints: Original query constraints
+        results: Search results to validate
+        
+    Returns:
+        Dictionary with validation results and suggestions
+    """
+    validation = {
+        "meets_constraints": True,
+        "issues": [],
+        "suggestions": [],
+        "result_count": len(results)
+    }
+    
+    # Check count constraint
+    if constraints.count and len(results) < constraints.count:
+        validation["meets_constraints"] = False
+        validation["issues"].append(f"Requested {constraints.count} items but only found {len(results)}")
+        validation["suggestions"].append("Try broadening your search terms or removing some constraints")
+    
+    # Check file type constraints
+    if constraints.file_types and results:
+        result_file_types = set()
+        for result in results:
+            file_path = result.get("file", "") or result.get("document_path", "")
+            if file_path:
+                # Extract extension
+                ext = file_path.split('.')[-1].upper() if '.' in file_path else ""
+                if ext:
+                    result_file_types.add(ext)
+        
+        requested_types = set(constraints.file_types)
+        if not requested_types.intersection(result_file_types):
+            validation["meets_constraints"] = False
+            validation["issues"].append(f"Requested file types {constraints.file_types} but found {list(result_file_types)}")
+            validation["suggestions"].append("Try using different file type terms or check if the requested file types exist in your document collection")
+    
+    # Check content filtering effectiveness
+    if constraints.has_content_filter and constraints.content_terms:
+        if not results:
+            validation["meets_constraints"] = False
+            validation["issues"].append(f"No results found matching content terms: {constraints.content_terms}")
+            validation["suggestions"].append("Try using different keywords or synonyms")
+    
+    return validation

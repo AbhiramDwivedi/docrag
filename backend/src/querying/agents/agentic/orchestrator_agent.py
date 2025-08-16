@@ -554,18 +554,53 @@ class OrchestratorAgent(BaseAgent):
         return "No documents found matching your query."
     
     def _format_analysis_response(self, context: AgentContext, results: List[StepResult]) -> str:
-        """Format response for content analysis."""
+        """Format response for content analysis with constraint validation."""
         response_parts = []
         
-        for result in results:
-            if result.step_type == StepType.EXTRACT_CONTENT:
-                content = result.get_value("extracted_content", {})
-                if content.get("content"):
-                    response_parts.append(content["content"])
-            elif result.step_type == StepType.ANALYZE_DECISIONS:
-                decisions = result.get_value("analysis_summary", "")
-                if decisions:
-                    response_parts.append(f"\n📋 Decision Analysis:\n{decisions}")
+        # Check if this was a constraint-based content filtering query
+        try:
+            from shared.constraints import ConstraintExtractor, validate_constraint_results
+            constraints = ConstraintExtractor.extract(context.query)
+            
+            content_results = []
+            for result in results:
+                if result.step_type == StepType.EXTRACT_CONTENT:
+                    content = result.get_value("extracted_content", {})
+                    if content.get("content"):
+                        response_parts.append(content["content"])
+                        
+                    # Extract sources for constraint validation
+                    sources = content.get("sources", [])
+                    content_results.extend(sources)
+                        
+                elif result.step_type == StepType.ANALYZE_DECISIONS:
+                    decisions = result.get_value("analysis_summary", "")
+                    if decisions:
+                        response_parts.append(f"\n📋 Decision Analysis:\n{decisions}")
+            
+            # Validate constraints for content filtering queries
+            if constraints.has_content_filter and content_results:
+                validation = validate_constraint_results(constraints, content_results)
+                
+                if not validation["meets_constraints"]:
+                    # Add constraint validation feedback
+                    feedback_parts = []
+                    
+                    if validation["issues"]:
+                        feedback_parts.append("\n⚠️ Query constraints:")
+                        for issue in validation["issues"]:
+                            feedback_parts.append(f"  • {issue}")
+                    
+                    if validation["suggestions"]:
+                        feedback_parts.append("\n💡 Suggestions:")
+                        for suggestion in validation["suggestions"]:
+                            feedback_parts.append(f"  • {suggestion}")
+                    
+                    if feedback_parts:
+                        response_parts.extend(feedback_parts)
+            
+        except Exception as e:
+            self.orchestrator_logger.warning(f"Content constraint validation failed: {e}")
         
         return "\n\n".join(response_parts) if response_parts else "No content analysis available."
     
@@ -598,7 +633,54 @@ class OrchestratorAgent(BaseAgent):
         return "\n".join(response_parts) if response_parts else "Investigation completed."
     
     def _format_metadata_response(self, context: AgentContext, results: List[StepResult]) -> str:
-        """Format response for metadata queries."""
+        """Format response for metadata queries with constraint validation."""
+        # Check if this was a constraint-based query
+        try:
+            from shared.constraints import ConstraintExtractor, validate_constraint_results
+            constraints = ConstraintExtractor.extract(context.query)
+            
+            # Find metadata results
+            metadata_result = None
+            for result in results:
+                if result.step_type == StepType.RETURN_METADATA:
+                    metadata_result = result
+                    break
+            
+            if metadata_result:
+                # Extract results for validation
+                result_data = metadata_result.get_value("data", {})
+                files = result_data.get("files", []) if isinstance(result_data, dict) else []
+                
+                # Validate against constraints
+                validation = validate_constraint_results(constraints, files)
+                
+                # Get formatted response
+                base_response = metadata_result.get_value("formatted_response", "Metadata retrieved")
+                
+                # Add constraint validation feedback
+                if not validation["meets_constraints"]:
+                    feedback_parts = [base_response]
+                    
+                    # Add issues
+                    if validation["issues"]:
+                        feedback_parts.append("\n⚠️ Constraint validation:")
+                        for issue in validation["issues"]:
+                            feedback_parts.append(f"  • {issue}")
+                    
+                    # Add suggestions
+                    if validation["suggestions"]:
+                        feedback_parts.append("\n💡 Suggestions:")
+                        for suggestion in validation["suggestions"]:
+                            feedback_parts.append(f"  • {suggestion}")
+                    
+                    return "\n".join(feedback_parts)
+                
+                return base_response
+            
+        except Exception as e:
+            self.orchestrator_logger.warning(f"Constraint validation failed: {e}")
+        
+        # Fallback to simple formatting
         for result in results:
             if result.step_type == StepType.RETURN_METADATA:
                 return result.get_value("formatted_response", "Metadata retrieved")

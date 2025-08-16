@@ -321,14 +321,12 @@ class AnalysisAgent(BaseAgent):
         
         params = {
             "question": base_params.get("query", context.query),
-            "use_document_level": True,
             "k": 50,
-            "max_documents": len(target_docs) if target_docs else 5
+            "mmr_k": len(target_docs) if target_docs else 5
         }
         
-        # If we have specific documents, focus search on them
-        if target_docs:
-            params["target_documents"] = target_docs
+        # Note: target_documents filtering not currently supported by semantic plugin
+        # Semantic search will return results across all documents
         
         params.update(base_params)
         return params
@@ -356,14 +354,14 @@ class AnalysisAgent(BaseAgent):
         
         params = {
             "question": content_query,
-            "use_document_level": True,
-            "k": min(len(target_docs) * 2, 100),  # Search more chunks per doc
-            "max_documents": target_count  # Final desired count
+            "k": min(len(target_docs) * 2, 100) if target_docs else 50,  # Search more chunks per doc
+            "mmr_k": target_count  # Final desired count after MMR
         }
         
-        # Restrict search to metadata results
-        if target_docs:
-            params["target_documents"] = target_docs
+        # Note: target_documents filtering will need to be implemented 
+        # differently since semantic search doesn't support it directly.
+        # For now, let the semantic search plugin handle the filtering 
+        # and we'll clip results in post-processing.
         
         return params
     
@@ -421,10 +419,8 @@ class AnalysisAgent(BaseAgent):
         
         return {
             "question": decision_query,
-            "use_document_level": True,
             "k": 30,
-            "max_documents": 3,
-            "context_window": 4
+            "mmr_k": 3  # Focus on top 3 most relevant results
         }
     
     def _prepare_document_specific_params(self, step: ExecutionStep, document: Dict[str, Any], 
@@ -432,10 +428,8 @@ class AnalysisAgent(BaseAgent):
         """Prepare parameters for document-specific search."""
         return {
             "question": step.parameters.get("query", context.query),
-            "target_documents": [document.get("path", "")],
-            "use_document_level": True,
             "k": 20,
-            "max_documents": 1
+            "mmr_k": 1  # Focus on single most relevant result per document
         }
     
     def _process_extraction_results(self, result: Dict[str, Any], 
