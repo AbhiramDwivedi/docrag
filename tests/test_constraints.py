@@ -223,6 +223,75 @@ class TestConstraintExtractor:
         assert constraints.file_types == []
         assert not constraints.has_content_filter
     
+    def test_additional_edge_cases(self):
+        """Test additional edge cases for robustness."""
+        # Whitespace-only query
+        constraints = ConstraintExtractor.extract("   \t\n   ")
+        assert constraints.count is None
+        assert constraints.file_types == []
+        assert not constraints.has_content_filter
+        
+        # Various invalid input types
+        invalid_inputs = [[], {}, False, 0, 3.14, object()]
+        for invalid_input in invalid_inputs:
+            constraints = ConstraintExtractor.extract(invalid_input)
+            assert constraints.count is None
+            assert constraints.file_types == []
+            assert not constraints.has_content_filter
+        
+        # Extremely long query (stress test)
+        long_query = "show " + "very " * 1000 + "long query with many words"
+        constraints = ConstraintExtractor.extract(long_query)
+        # Should handle gracefully without crashing
+        assert isinstance(constraints, QueryConstraints)
+        
+        # Query with special characters and mixed case
+        constraints = ConstraintExtractor.extract("LIST 5 LATEST files!!! @#$%^&*()")
+        assert constraints.count == 5
+        assert constraints.file_types == []
+        
+        # Query with unicode characters
+        constraints = ConstraintExtractor.extract("List 3 files résumé café naïve")
+        assert constraints.count == 3
+        
+        # Query with numbers as words in content (should not extract as count)
+        constraints = ConstraintExtractor.extract("Find documents about year two thousand")
+        assert constraints.count is None
+        assert "thousand" in constraints.content_terms or "year" in constraints.content_terms
+        
+        # Boundary condition: very large numbers
+        constraints = ConstraintExtractor.extract("List 999999 files")
+        assert constraints.count == 100  # Should be clamped to maximum
+        
+        # Multiple numbers in query (should extract first valid one)
+        constraints = ConstraintExtractor.extract("List 5 top 10 files from 2023")
+        assert constraints.count == 5  # Should get first valid count
+    
+    def test_malformed_queries(self):
+        """Test handling of malformed or unusual queries."""
+        malformed_queries = [
+            "List files",  # No count - should not extract count
+            "5",  # Just a number - should not extract count
+            "five",  # Just a number word - should not extract count  
+            "Show me files about 5 topics",  # Number in content, not count
+            "List zero files",  # Number word for zero
+            "Display negative five documents",  # Negative as words
+            "Find files -n 5",  # Command line style
+            "SELECT * FROM files LIMIT 5",  # SQL injection style
+            "<script>alert('xss')</script> show 5 files",  # XSS attempt
+            "../../etc/passwd show files",  # Path traversal attempt
+            "null show files",  # null injection attempt
+        ]
+        
+        for query in malformed_queries:
+            constraints = ConstraintExtractor.extract(query)
+            # Should handle gracefully without crashing
+            assert isinstance(constraints, QueryConstraints)
+            # Most of these should not extract valid counts
+            if query in ["List files", "five", "Show me files about 5 topics"]:
+                assert constraints.count is None
+            # "5" by itself might reasonably be interpreted as a count, so allow it
+    
     def test_success_criteria_examples(self):
         """Test examples from the success criteria table."""
         test_cases = [

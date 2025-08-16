@@ -123,10 +123,19 @@ class ConstraintExtractor:
         Returns:
             QueryConstraints with extracted parameters
         """
-        if not query or not isinstance(query, str):
+        # Handle various invalid input types gracefully
+        if query is None:
             return QueryConstraints()
         
-        query_lower = query.lower()
+        if not isinstance(query, str):
+            logger.debug(f"Non-string query input: {type(query)}, returning empty constraints")
+            return QueryConstraints()
+        
+        # Handle empty or whitespace-only strings
+        if not query.strip():
+            return QueryConstraints()
+        
+        query_lower = query.lower().strip()
         constraints = QueryConstraints()
         
         # Extract count constraint
@@ -160,10 +169,10 @@ class ConstraintExtractor:
         Returns:
             Extracted count within safe bounds, or None if not found
         """
-        # Pattern for digits followed by optional count-related words
+        # Pattern for positive digits only (reject negative numbers)
         digit_patterns = [
-            r'\b(\d+)\s*(?:latest|recent|newest|new|first|top|files?|documents?|items?|results?)\b',
-            r'\b(?:(?:first|top|latest|recent|newest|show|list|get|find)\s+)?(\d+)\b',
+            r'\b(\d+)\s*(?:latest|recent|newest|new|first|top|files?|documents?|items?|results?|presentations?|spreadsheets?|docs?|pdfs?)\b',
+            r'\b(?:(?:first|top|latest|recent|newest|show|list|get|find)\s+)?(\d+)(?!\s*[\w-])\b',
             r'\b(\d+)\s+(?:of\s+)?(?:the\s+)?(?:latest|recent|newest|new|first|top)\b'
         ]
         
@@ -171,15 +180,27 @@ class ConstraintExtractor:
             match = re.search(pattern, query)
             if match:
                 try:
-                    count = int(match.group(1))
-                    return cls._clamp_count(count)
+                    count_str = match.group(1)
+                    # Ensure we didn't match a negative number
+                    full_match = match.group(0)
+                    if '-' in query[max(0, match.start()-2):match.start()]:
+                        continue  # Skip negative numbers
+                    
+                    count = int(count_str)
+                    # Accept any non-negative number, clamp will handle bounds
+                    if count >= 0:
+                        return cls._clamp_count(count)
                 except (ValueError, IndexError):
                     continue
         
-        # Pattern for number words
+        # Pattern for number words - handle different contexts
         number_word_patterns = [
-            r'\b(' + '|'.join(cls.NUMBER_WORDS.keys()) + r')\s*(?:latest|recent|newest|new|first|top|files?|documents?|items?|results?)\b',
-            r'\b(?:(?:first|top|latest|recent|newest|show|list|get|find)\s+)?(' + '|'.join(cls.NUMBER_WORDS.keys()) + r')\b'
+            # Handle "get/find first X" specifically (where X is the actual number we want)
+            r'\b(?:get|find)\s+first\s+(' + '|'.join([k for k in cls.NUMBER_WORDS.keys() if k not in ['first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth', 'tenth']]) + r')\s',
+            # Handle various contexts with optional words in between
+            r'\b(?:show|list|get|find|display)(?:\s+me)?(?:\s+the)?(?:\s+top)?\s+(' + '|'.join(cls.NUMBER_WORDS.keys()) + r')(?:\s+(?:latest|recent|newest|new|files?|documents?|items?|results?|spreadsheets?|presentations?|docs?|pdfs?))',
+            # Standard pattern: number followed by type/qualifier
+            r'\b(' + '|'.join(cls.NUMBER_WORDS.keys()) + r')\s+(?:latest|recent|newest|new|files?|documents?|items?|results?)\b'
         ]
         
         for pattern in number_word_patterns:
