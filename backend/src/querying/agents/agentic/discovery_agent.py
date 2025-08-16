@@ -196,25 +196,13 @@ class DiscoveryAgent(BaseAgent):
             if not metadata_plugin:
                 return self._create_failure_result(step, "Metadata plugin not found")
             
-            # Determine appropriate metadata operation based on query
-            query = step.parameters.get("query", context.query).lower()
+            # Build metadata operation parameters from step parameters and fallback to query analysis
+            metadata_params = self._build_metadata_params(step, context)
             
-            if any(term in query for term in ["how many", "count", "number of"]):
-                operation = "get_file_count"
-            elif any(term in query for term in ["recent", "latest", "newest"]):
-                operation = "get_latest_files"
-            elif any(term in query for term in ["types", "file types", "extensions"]):
-                operation = "get_file_types"
-            elif any(term in query for term in ["stats", "statistics", "summary"]):
-                operation = "get_file_stats"
-            elif any(term in query for term in ["list", "show", "all files", "all documents"]):
-                operation = "find_files"
-            else:
-                # Default to file listing for general metadata queries
-                operation = "find_files"
+            self.agent_logger.info(f"Executing metadata operation with params: {metadata_params}")
             
             # Execute the metadata operation
-            result = metadata_plugin.execute({"operation": operation})
+            result = metadata_plugin.execute(metadata_params)
             
             # Extract response from plugin result
             if isinstance(result, dict) and "response" in result:
@@ -227,7 +215,7 @@ class DiscoveryAgent(BaseAgent):
                 {
                     "metadata_result": result,
                     "formatted_response": formatted_response,
-                    "operation": operation,
+                    "operation": metadata_params.get("operation", "unknown"),
                     "source": "metadata_plugin"
                 },
                 confidence=0.8
@@ -235,6 +223,65 @@ class DiscoveryAgent(BaseAgent):
             
         except Exception as e:
             return self._create_failure_result(step, f"Metadata command error: {e}")
+    
+    def _build_metadata_params(self, step: ExecutionStep, context: AgentContext) -> Dict[str, Any]:
+        """Build metadata plugin parameters from step parameters and query analysis.
+        
+        Args:
+            step: ExecutionStep with parameters from orchestrator
+            context: AgentContext with query information
+            
+        Returns:
+            Dictionary of parameters for metadata plugin
+        """
+        # Start with parameters provided by orchestrator
+        params = {}
+        
+        # Get operation from step parameters or determine from query
+        operation = step.parameters.get("operation")
+        if not operation:
+            # Fallback to query analysis for backward compatibility
+            query = step.parameters.get("query", context.query).lower()
+            if any(term in query for term in ["how many", "count", "number of"]):
+                operation = "get_file_count"
+            elif any(term in query for term in ["recent", "latest", "newest"]):
+                operation = "get_latest_files"
+            elif any(term in query for term in ["types", "file types", "extensions"]):
+                operation = "get_file_types"
+            elif any(term in query for term in ["stats", "statistics", "summary"]):
+                operation = "get_file_stats"
+            elif any(term in query for term in ["list", "show", "all files", "all documents"]):
+                operation = "find_files"
+            else:
+                operation = "find_files"
+        
+        params["operation"] = operation
+        
+        # Forward constraint parameters from orchestrator
+        if "count" in step.parameters:
+            params["count"] = step.parameters["count"]
+        
+        if "file_type" in step.parameters:
+            params["file_type"] = step.parameters["file_type"]
+            
+        if "file_types" in step.parameters:
+            # Handle multiple file types - pass them as individual parameters
+            file_types = step.parameters["file_types"]
+            if isinstance(file_types, list) and len(file_types) == 1:
+                # Single type - use file_type parameter
+                params["file_type"] = file_types[0]
+            elif isinstance(file_types, list) and len(file_types) > 1:
+                # Multiple types - for now, use the first one since metadata plugin
+                # doesn't fully support multiple types yet
+                # TODO: Enhance metadata plugin to support multiple file types
+                params["file_type"] = file_types[0]
+                self.agent_logger.info(f"Multiple file types requested {file_types}, using {file_types[0]}")
+        
+        # Add time filter if specified
+        if "time_filter" in step.parameters:
+            params["time_filter"] = step.parameters["time_filter"]
+        
+        return params
     
     def _return_file_paths(self, step: ExecutionStep, context: AgentContext) -> StepResult:
         """Return file paths for discovered documents.

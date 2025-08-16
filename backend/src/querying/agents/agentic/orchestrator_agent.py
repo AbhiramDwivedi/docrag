@@ -262,12 +262,96 @@ class OrchestratorAgent(BaseAgent):
             )
     
     def _create_metadata_query_plan(self, plan: ExecutionPlan, query: str, intent_result) -> None:
-        """Create plan for metadata queries."""
-        # Simple plan - just return metadata
+        """Create plan for metadata queries with constraint-aware processing."""
+        # Import constraint extraction locally to avoid circular imports
+        from shared.constraints import ConstraintExtractor, get_content_filtering_multiplier
+        
+        # Extract constraints from the query
+        constraints = ConstraintExtractor.extract(query)
+        
+        self.orchestrator_logger.info(f"Extracted constraints: count={constraints.count}, "
+                                    f"file_types={constraints.file_types}, "
+                                    f"has_content_filter={constraints.has_content_filter}")
+        
+        if constraints.has_content_filter:
+            # Two-step plan: metadata filtering + content filtering
+            self._create_two_step_content_plan(plan, query, constraints)
+        else:
+            # Single-step plan: metadata-only query
+            self._create_single_step_metadata_plan(plan, query, constraints)
+    
+    def _create_single_step_metadata_plan(self, plan: ExecutionPlan, query: str, constraints) -> None:
+        """Create single-step plan for metadata-only queries."""
+        # Prepare metadata parameters with extracted constraints
+        metadata_params = {
+            "query": query,
+            "intent": "metadata_query",
+            "operation": "get_latest_files"  # Use latest files operation for constraint support
+        }
+        
+        # Add constraint parameters if present
+        if constraints.count is not None:
+            metadata_params["count"] = constraints.count
+        
+        if constraints.file_types:
+            # Use first file type for the metadata plugin (it supports single file_type)
+            # For multiple types, the metadata plugin's _get_latest_files can handle it
+            if len(constraints.file_types) == 1:
+                metadata_params["file_type"] = constraints.file_types[0]
+            else:
+                # Pass as list - the metadata plugin will need to handle this
+                metadata_params["file_types"] = constraints.file_types
+        
         plan.add_step(
             StepType.RETURN_METADATA,
             "discovery",
-            {"query": query, "intent": "metadata_query"}
+            metadata_params
+        )
+    
+    def _create_two_step_content_plan(self, plan: ExecutionPlan, query: str, constraints) -> None:
+        """Create two-step plan for queries with content filtering."""
+        from shared.constraints import get_content_filtering_multiplier, get_default_count
+        
+        # Step 1: Metadata filtering with widened count
+        base_count = constraints.count if constraints.count is not None else get_default_count()
+        widened_count = base_count * get_content_filtering_multiplier()
+        
+        metadata_params = {
+            "query": query,
+            "intent": "metadata_query_for_content",
+            "operation": "get_latest_files",
+            "count": widened_count
+        }
+        
+        # Add file type constraints
+        if constraints.file_types:
+            if len(constraints.file_types) == 1:
+                metadata_params["file_type"] = constraints.file_types[0]
+            else:
+                metadata_params["file_types"] = constraints.file_types
+        
+        # Add metadata step
+        metadata_step_id = plan.add_step(
+            StepType.RETURN_METADATA,
+            "discovery",
+            metadata_params
+        )
+        
+        # Step 2: Content filtering on metadata results
+        content_params = {
+            "query": query,
+            "intent": "content_filtering",
+            "extraction_type": "content_filtering",
+            "content_terms": constraints.content_terms,
+            "target_count": base_count,  # Final desired count
+            "use_target_docs": True  # Signal to restrict search to metadata results
+        }
+        
+        plan.add_step(
+            StepType.EXTRACT_CONTENT,
+            "analysis",
+            content_params,
+            dependencies=[metadata_step_id]
         )
     
     def _create_relationship_analysis_plan(self, plan: ExecutionPlan, query: str, intent_result) -> None:
