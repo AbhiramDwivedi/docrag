@@ -4,32 +4,35 @@ This test validates that the constraint extraction and orchestrator integration
 work together correctly for the success criteria from requirements.
 """
 
+import pytest
 import sys
 import os
 from pathlib import Path
+from unittest.mock import patch, MagicMock
 
 # Add backend/src to path for imports
 backend_src = Path(__file__).parent.parent / "backend" / "src"
 sys.path.insert(0, str(backend_src))
 
-# Mock minimal dependencies to test without full environment
-class MockSettings:
+
+@pytest.fixture
+def mock_settings():
     """Mock settings for testing."""
-    default_query_count = 10
-    max_query_count = 100
-    content_filtering_multiplier = 3
-
-# Mock the get_settings function
-def mock_get_settings():
-    return MockSettings()
-
-# Patch imports
-sys.modules['shared.config'] = type(sys)('mock_config')
-sys.modules['shared.config'].get_settings = mock_get_settings
+    mock = MagicMock()
+    mock.default_query_count = 10
+    mock.max_query_count = 100
+    mock.content_filtering_multiplier = 3
+    return mock
 
 
-def test_constraint_extraction():
+def test_constraint_extraction(mock_settings):
     """Test constraint extraction for success criteria examples."""
+    
+    with patch('shared.config.get_settings', return_value=mock_settings):
+        return test_constraint_extraction_impl()
+
+def test_constraint_extraction_impl():
+    """Implementation of constraint extraction test."""
     from shared.constraints import ConstraintExtractor
     
     print("=== Testing Constraint Extraction ===")
@@ -94,12 +97,25 @@ def test_constraint_extraction():
             if constraints.has_content_filter:
                 print(f"      Content terms: {constraints.content_terms}")
     
-    print("\n✅ All constraint extraction tests passed!")
-    return True
+        print("\n✅ All constraint extraction tests passed!")
+        return True
 
 
-def test_orchestrator_plan_creation():
+@patch('shared.config.get_settings')
+def test_orchestrator_plan_creation(mock_get_settings):
     """Test that orchestrator creates appropriate plans based on constraints."""
+    
+    # Setup mock settings
+    mock_settings = MagicMock()
+    mock_settings.default_query_count = 10
+    mock_settings.max_query_count = 100
+    mock_settings.content_filtering_multiplier = 3
+    mock_get_settings.return_value = mock_settings
+    
+    return test_orchestrator_plan_creation_impl()
+
+def test_orchestrator_plan_creation_impl():
+    """Implementation of orchestrator plan creation test."""
     from shared.constraints import ConstraintExtractor
     
     print("\n=== Testing Orchestrator Plan Logic ===")
@@ -132,8 +148,21 @@ def test_orchestrator_plan_creation():
     return True
 
 
-def test_parameter_forwarding():
+@patch('shared.config.get_settings')
+def test_parameter_forwarding(mock_get_settings):
     """Test that parameters are correctly structured for forwarding."""
+    
+    # Setup mock settings
+    mock_settings = MagicMock()
+    mock_settings.default_query_count = 10
+    mock_settings.max_query_count = 100
+    mock_settings.content_filtering_multiplier = 3
+    mock_get_settings.return_value = mock_settings
+    
+    return test_parameter_forwarding_impl()
+
+def test_parameter_forwarding_impl():
+    """Implementation of parameter forwarding test."""
     from shared.constraints import ConstraintExtractor, get_content_filtering_multiplier
     
     print("\n=== Testing Parameter Forwarding ===")
@@ -213,19 +242,26 @@ def run_all_tests():
     print("Running Multi-Constraint Query Processing Integration Tests")
     print("=" * 60)
     
+    # Create mock settings once for all tests
+    mock_settings = MagicMock()
+    mock_settings.default_query_count = 10
+    mock_settings.max_query_count = 100
+    mock_settings.content_filtering_multiplier = 3
+    
     tests = [
-        test_constraint_extraction,
-        test_orchestrator_plan_creation, 
-        test_parameter_forwarding
+        ("constraint_extraction", test_constraint_extraction_impl),
+        ("orchestrator_plan_creation", test_orchestrator_plan_creation_impl),
+        ("parameter_forwarding", test_parameter_forwarding_impl)
     ]
     
     results = []
-    for test in tests:
+    for test_name, test_func in tests:
         try:
-            result = test()
-            results.append(result)
+            with patch('shared.config.get_settings', return_value=mock_settings):
+                result = test_func()
+                results.append(result)
         except Exception as e:
-            print(f"❌ Test failed with exception: {e}")
+            print(f"❌ Test '{test_name}' failed with exception: {e}")
             import traceback
             traceback.print_exc()
             results.append(False)
